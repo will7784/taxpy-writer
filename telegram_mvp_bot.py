@@ -42,7 +42,7 @@ class WriterTelegramBot:
         self.token = token
         self.writer = WriterEngine()
         self.voice = VoiceProcessor() if config.GOOGLE_API_KEY else None
-        # Sesiones en memoria: chat_id -> {"title": str, "content": str, "type": str}
+        # Sesiones en memoria: chat_id -> dict
         self._sessions: dict[int, dict] = {}
 
     # ── Comandos ──────────────────────────────────────────────
@@ -59,10 +59,48 @@ class WriterTelegramBot:
             "• /manual `<tema>` — manual completo con capítulos\n"
             "• /articulo `<tema>` — artículo editorial largo\n"
             "• /guion `<tema>` — guion de video con escenas y planos\n"
+            "• /outline `<tema>` — índice detallado primero (tú apruebas)\n"
+            "• /notebook — info del cuaderno conectado\n"
             "• /voz `on` / `off` — activa respuestas de voz\n\n"
             "También puedes escribirme directamente o mandarme un *audio* 🎙️"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
+
+    async def _notebook(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Muestra información del notebook conectado."""
+        await update.message.chat.send_action(action="typing")
+        try:
+            notebooks = await self.writer.nb_manager.list_notebooks()
+            current_name = config.NOTEBOOKLM_NOTEBOOK_NAME
+            current_id = ""
+            try:
+                current_id = await self.writer.nb_manager.create_or_get_notebook()
+            except Exception:
+                pass
+
+            lines = [
+                "📓 *Información del NotebookLM*",
+                "",
+                f"*Cuaderno configurado:* `{current_name}`",
+                f"*ID actual:* `{current_id or 'No conectado'}`",
+                "",
+                f"*Cuadernos disponibles en esta cuenta:* {len(notebooks)}",
+            ]
+            for nb in notebooks[:10]:
+                marker = " ✅" if nb["id"] == current_id else ""
+                lines.append(f"  • {nb['name']}{marker}")
+            if len(notebooks) > 10:
+                lines.append(f"  ... y {len(notebooks) - 10} más")
+
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+        except Exception as e:
+            console.print(f"[red]Notebook info error: {e}[/red]")
+            await update.message.reply_text(
+                "❌ No pude obtener la información del notebook. "
+                "Verifica que NOTEBOOKLM_AUTH_JSON esté configurado correctamente."
+            )
 
     async def _manual(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -91,6 +129,15 @@ class WriterTelegramBot:
             return
         await self._process_request(update, topic, "guion")
 
+    async def _outline(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        topic = " ".join(context.args or []).strip()
+        if not topic:
+            await update.message.reply_text("Usa: /outline `<tema a desarrollar>`")
+            return
+        await self._process_outline(update, topic)
+
     async def _voz(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -113,18 +160,17 @@ class WriterTelegramBot:
                 parse_mode="Markdown",
             )
 
-    # ── Procesamiento central ─────────────────────────────────
+    # ── Procesamiento Outline (modo índice primero) ───────────
 
-    async def _process_request(
+    async def _process_outline(
         self,
         update: Update,
         topic: str,
-        content_type: Optional[str] = None,
     ) -> None:
         chat_id = int(update.effective_chat.id)
-        detected = content_type or self.writer.detect_content_type(topic)
+        detected = self.writer.detect_content_type(topic)
 
-        # 1. Research
+        # Research
         await update.message.chat.send_action(action="typing")
         await update.message.reply_text(
             f"🔍 Investigando *{topic}* en NotebookLM...",
@@ -136,6 +182,70 @@ class WriterTelegramBot:
             console.print(f"[red]Research error: {e}[/red]")
             research = ""
 
+        # Outline
+        await update.message.chat.send_action(action="typing")
+        status_msg = await update.message.reply_text("📝 Generando índice detallado...")
+
+        try:
+            outline = await self.writer.generate_outline(topic, research, detected)
+        except Exception as e:
+            console.print(f"[red]Outline error: {e}[/red]")
+            await status_msg.edit_text("❌ Error generando el índice.")
+            return
+
+        await status_msg.delete()
+
+        # Guardar sesión para escritura posterior
+        self._sessions[chat_id] = {
+            "title": topic,
+            "content": "",
+            "type": detected,
+            "outline": outline,
+            "research": research,
+            "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+            "outline_pending": True,
+        }
+
+        # Enviar outline
+        chunks = self.writer.split_for_telegram(outline)
+        for chunk in chunks:
+            await update.message.reply_text(chunk)
+
+        # Instrucción para continuar
+        await update.message.reply_text(
+            "✅ Este es el índice propuesto.\n\n"
+            "Si te gusta, responde con la palabra *escribir* "
+            "y generaré el contenido completo.\n"
+            "Si quieres cambios, escríbemelos y regeneraré el índice.",
+            parse_mode="Markdown",
+        )
+
+    # ── Procesamiento central ─────────────────────────────────
+
+    async def _process_request(
+        self,
+        update: Update,
+        topic: str,
+        content_type: Optional[str] = None,
+        outline: str = "",
+        research: str = "",
+    ) -> None:
+        chat_id = int(update.effective_chat.id)
+        detected = content_type or self.writer.detect_content_type(topic)
+
+        # 1. Research (si no viene pre-calculado)
+        if not research:
+            await update.message.chat.send_action(action="typing")
+            await update.message.reply_text(
+                f"🔍 Investigando *{topic}* en NotebookLM...",
+                parse_mode="Markdown",
+            )
+            try:
+                research = await self.writer.research(topic)
+            except Exception as e:
+                console.print(f"[red]Research error: {e}[/red]")
+                research = ""
+
         # 2. Write
         await update.message.chat.send_action(action="typing")
         status_msg = await update.message.reply_text(
@@ -144,7 +254,7 @@ class WriterTelegramBot:
         )
 
         try:
-            content = await self.writer.write(topic, research, detected)
+            content = await self.writer.write(topic, research, detected, outline)
         except Exception as e:
             console.print(f"[red]Write error: {e}[/red]")
             await status_msg.edit_text(
@@ -157,7 +267,10 @@ class WriterTelegramBot:
             "title": topic,
             "content": content,
             "type": detected,
+            "outline": outline,
+            "research": research,
             "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+            "outline_pending": False,
         }
 
         await status_msg.delete()
@@ -205,6 +318,30 @@ class WriterTelegramBot:
         text = (text_override or update.message.text or "").strip()
         if not text:
             return
+
+        chat_id = int(update.effective_chat.id)
+        session = self._sessions.get(chat_id, {})
+
+        # Si hay un outline pendiente y el usuario dice "escribir"
+        if session.get("outline_pending") and text.lower() in ("escribir", "sí", "si", "yes", "ok", "dale"):
+            await self._process_request(
+                update,
+                session["title"],
+                session["type"],
+                outline=session.get("outline", ""),
+                research=session.get("research", ""),
+            )
+            return
+
+        # Si hay un outline pendiente y el usuario pide cambios
+        if session.get("outline_pending"):
+            await update.message.reply_text(
+                "📝 Regenerando el índice con tus cambios..."
+            )
+            await self._process_outline(update, text)
+            return
+
+        # Mensaje libre normal
         detected = self.writer.detect_content_type(text)
         await self._process_request(update, text, detected)
 
@@ -278,9 +415,11 @@ class WriterTelegramBot:
         app = Application.builder().token(self.token).build()
 
         app.add_handler(CommandHandler("start", self._start))
+        app.add_handler(CommandHandler("notebook", self._notebook))
         app.add_handler(CommandHandler("manual", self._manual))
         app.add_handler(CommandHandler("articulo", self._articulo))
         app.add_handler(CommandHandler("guion", self._guion))
+        app.add_handler(CommandHandler("outline", self._outline))
         app.add_handler(CommandHandler("voz", self._voz))
         app.add_handler(CallbackQueryHandler(self._handle_callback))
         app.add_handler(MessageHandler(filters.VOICE, self._handle_voice))

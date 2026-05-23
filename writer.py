@@ -3,8 +3,9 @@ Motor de escritura inteligente.
 
 Flujo:
 1. Detecta tipo de contenido (manual / artículo / guion).
-2. Investiga en NotebookLM (1–3 preguntas estratégicas).
-3. Redacta contenido largo con GPT-4o usando la investigación como contexto.
+2. Investiga en NotebookLM (preguntas estratégicas con enfoque legal).
+3. Redacta contenido largo con GPT-4o usando investigación + agent.md como contexto.
+4. Modo outline: genera índice detallado primero para aprobación del usuario.
 """
 
 from __future__ import annotations
@@ -22,20 +23,35 @@ console = Console()
 
 ContentType = Literal["manual", "articulo", "guion"]
 
+# ── Cargar instrucciones del agente ───────────────────────
+_AGENT_MD: str = ""
+
+
+def _load_agent_md() -> str:
+    global _AGENT_MD
+    if not _AGENT_MD and config.AGENT_MD_FILE.exists():
+        _AGENT_MD = config.AGENT_MD_FILE.read_text(encoding="utf-8")
+    return _AGENT_MD
+
+
 _SYSTEM_PROMPTS: dict[ContentType, str] = {
     "manual": (
         "Eres un experto tributario chileno y redactor técnico. "
         "Escribe un manual completo, didáctico y riguroso en tono profesional. "
         "Estructura el contenido en capítulos y subcapítulos numerados. "
-        "Incluye definiciones, ejemplos prácticos, casos de aplicación y referencias normativas. "
-        "Cita artículos de ley, oficios y circulares del SII cuando corresponda. "
+        "Cada apartado DEBE incluir: definición clara, base legal específica "
+        "(artículo, ley, oficio o circular), desarrollo explicativo paso a paso, "
+        "errores comunes, y un ejemplo práctico desarrollado de al menos 1 párrafo. "
+        "Cita siempre la norma entre paréntesis después de cada afirmación de derecho. "
         "Usa formato Markdown (# para capítulos, ## para subcapítulos)."
     ),
     "articulo": (
         "Eres un experto tributario chileno y columnista especializado. "
         "Escribe un artículo largo, editorial y didáctico con rigor técnico. "
         "Estructura: introducción hook, desarrollo con subtemas, conclusión con take-away. "
-        "Incluye citas normativas, jurisprudencia y criterios del SII. "
+        "Cada sección debe incluir citas normativas específicas (artículo, ley, oficio SII), "
+        "al menos 2 ejemplos prácticos desarrollados con sujetos, hechos y resultado, "
+        "y tips prácticos al final de cada sección. "
         "Tono: claro, profesional, accesible para contadores y abogados. "
         "Usa formato Markdown (# para título, ## para secciones)."
     ),
@@ -48,6 +64,7 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
         "DIÁLOGO/VO: [texto a decir]\n"
         "GRÁFICO: [lo que aparece en pantalla]\n\n"
         "Incluye hook inicial, desarrollo didáctico y CTA final. "
+        "Cada escena debe ser de 30–60 segundos. "
         "Tono conversacional pero riguroso. Máximo 3–5 minutos de video."
     ),
 }
@@ -60,6 +77,7 @@ class WriterEngine:
         )
         self._nb_id: str | None = None
         self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        self._agent_md = _load_agent_md()
 
     async def _ensure_notebook(self) -> str:
         if self._nb_id is None:
@@ -84,14 +102,26 @@ class WriterEngine:
         return "articulo"
 
     async def research(self, topic: str) -> str:
-        """Investiga en NotebookLM y devuelve un contexto consolidado."""
+        """Investiga en NotebookLM con preguntas legales específicas."""
         nb_id = await self._ensure_notebook()
         questions = [
-            f"Resume toda la información relevante sobre: {topic}. "
-            "Incluye normativa aplicable, jurisprudencia y criterios del SII.",
-            f"¿Qué oficios, circulares o resoluciones del SII existen relacionados con: {topic}? "
-            "Incluye códigos y fechas si están disponibles.",
-            f"¿Cuáles son los puntos clave, errores comunes y mejores prácticas sobre: {topic}?",
+            (
+                f"Responde como experto tributario chileno sobre: {topic}. "
+                "Incluye EXACTAMENTE: (a) artículos del Código Tributario y Ley de Renta aplicables, "
+                "(b) oficios o circulares del SII relacionados, (c) jurisprudencia relevante si existe. "
+                "Cita siempre el número de artículo y la norma."
+            ),
+            (
+                f"¿Qué errores cometen los contribuyentes respecto a {topic}? "
+                "Incluye sanciones, plazos legales y consecuencias de incumplimiento. "
+                "Cita artículos específicos del Código Tributario."
+            ),
+            (
+                f"Proporciona un ejemplo práctico completo sobre {topic}: "
+                "sujeto (empresa o persona), hechos concretos (montos, fechas), "
+                "aplicación de la norma y resultado final. "
+                "Incluye la base legal aplicable al caso."
+            ),
         ]
         findings: list[str] = []
         for i, q in enumerate(questions, 1):
@@ -105,20 +135,61 @@ class WriterEngine:
                 console.print(f"  [yellow]⚠️ Research {i} falló: {e}[/yellow]")
         return "\n\n---\n\n".join(findings) if findings else ""
 
-    async def write(
+    async def generate_outline(
         self,
         topic: str,
         research_ctx: str,
         content_type: ContentType,
     ) -> str:
+        """Genera un índice detallado para aprobación del usuario."""
+        system = (
+            "Eres un editor experto en derecho tributario chileno. "
+            "Genera un índice detallado (outline) para un documento tributario. "
+            "Incluye capítulos, subcapítulos y una línea descriptiva de qué cubrirá cada uno. "
+            "Asegúrate de que cada sección tenga soporte legal (artículos, oficios, jurisprudencia)."
+        )
+        user_prompt = (
+            f"Tema: {topic}\n\n"
+            f"Información de fuentes:\n{research_ctx}\n\n"
+            f"Tipo de documento: {content_type}\n\n"
+            "Genera un índice detallado en formato lista numerada. "
+            "Cada ítem debe tener: título + 1 línea de descripción."
+        )
+
+        response = await self._openai.chat.completions.create(
+            model=config.OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=2000,
+        )
+        return (response.choices[0].message.content or "").strip()
+
+    async def write(
+        self,
+        topic: str,
+        research_ctx: str,
+        content_type: ContentType,
+        outline: str = "",
+    ) -> str:
         """Genera el contenido completo con GPT-4o."""
         system = _SYSTEM_PROMPTS[content_type]
+        if self._agent_md:
+            system += f"\n\nINSTRUCCIONES ADICIONALES DEL AGENTE:\n{self._agent_md}"
+
         user_prompt = (
             f"Tema a desarrollar: {topic}\n\n"
             f"Información de fuentes (NotebookLM):\n{research_ctx}\n\n"
-            "Escribe el contenido completo y detallado. "
+        )
+        if outline:
+            user_prompt += f"Índice aprobado por el usuario:\n{outline}\n\n"
+        user_prompt += (
+            "Escribe el contenido completo y detallado siguiendo el índice si existe. "
             "No agregues notas al pie ni disclaimers sobre ser IA. "
-            "Solo entrega el contenido profesional listo para publicar."
+            "Solo entrega el contenido profesional listo para publicar. "
+            "Recuerda: cada apartado debe tener definición, base legal, desarrollo, ejemplo práctico y tip."
         )
 
         console.print(f"  [dim]✍️ GPT-4o redactando ({content_type})...[/dim]")
@@ -144,7 +215,6 @@ class WriterEngine:
             if len(current) + len(paragraph) + 2 > max_len:
                 if current:
                     chunks.append(current.strip())
-                # Si el párrafo solo es más largo que max_len, cortar por líneas
                 if len(paragraph) > max_len:
                     lines = paragraph.split("\n")
                     current = ""

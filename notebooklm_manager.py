@@ -163,5 +163,31 @@ class NotebookLMManager:
                 h.update(chunk)
         return h.hexdigest()[:16]
 
+    async def list_notebooks(self) -> list[dict[str, Any]]:
+        """Lista los notebooks disponibles en la cuenta."""
+        async with await NotebookLMClient.from_storage() as client:
+            notebooks = await client.notebooks.list()
+            return [
+                {
+                    "id": str(nb.id),
+                    "name": getattr(nb, "name", "Sin nombre"),
+                    "created_at": getattr(nb, "created_at", ""),
+                }
+                for nb in notebooks
+            ]
+
+    async def get_notebook_sources(self, notebook_id: str) -> list[dict[str, Any]]:
+        """Lista las fuentes de un notebook específico."""
+        async with await NotebookLMClient.from_storage() as client:
+            sources = await client.sources.list(notebook_id)
+            return [
+                {
+                    "id": str(s.id),
+                    "name": getattr(s, "name", "Sin nombre"),
+                    "type": getattr(s, "type", "desconocido"),
+                }
+                for s in sources
+            ]
+
     def list_local_sources(self) -> list[dict[str, Any]]:
         return list(self._state.get("sources", {}).values())

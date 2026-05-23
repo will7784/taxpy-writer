@@ -37,7 +37,7 @@ NOTEBOOKLM_AUTH_JSON = os.getenv("NOTEBOOKLM_AUTH_JSON", "")
 # ============================================
 # Writer
 # ============================================
-WRITER_MAX_TOKENS = int(os.getenv("WRITER_MAX_TOKENS", "4000"))
+WRITER_MAX_TOKENS = int(os.getenv("WRITER_MAX_TOKENS", "8000"))
 WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.5"))
 
 # ============================================
@@ -46,6 +46,11 @@ WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.5"))
 TELEGRAM_DB_PATH = Path(os.getenv("TELEGRAM_DB_PATH", str(BASE_DIR / "taxpy_writer.sqlite3")))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", str(BASE_DIR / "exports")))
 EXPORTS_DIR.mkdir(exist_ok=True)
+
+# ============================================
+# Agente de escritura
+# ============================================
+AGENT_MD_FILE = BASE_DIR / "agent.md"
 
 # ============================================
 # Railway / Server (healthcheck mínimo)

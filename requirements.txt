@@ -1,0 +1,19 @@
+# Telegram
+python-telegram-bot>=21.0
+
+# LLM (escritura con GPT-4o)
+openai>=1.55.0
+
+# NotebookLM integration
+notebooklm-py
+
+# Voz (Gemini STT/TTS)
+google-genai>=1.55.0
+pydub>=0.25.0
+
+# Exportador DOCX
+python-docx>=1.1.0
+
+# Utilidades
+python-dotenv>=1.0.0
+rich>=13.0.0

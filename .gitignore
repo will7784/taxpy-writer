@@ -1,0 +1,63 @@
+# ============================================
+# Entorno y credenciales
+# ============================================
+.env
+.venv/
+venv/
+
+# ============================================
+# Python cache/build
+# ============================================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+
+# ============================================
+# Logs
+# ============================================
+logs/
+*.log
+SESSION_LOG.md
+
+# ============================================
+# Bases de datos y estados locales
+# ============================================
+*.sqlite3
+taxpy_writer.sqlite3
+notebooklm_state.json
+
+# ============================================
+# Datos del usuario y archivos generados
+# ============================================
+# NO subir documents/, notes/, exports/ — son datos locales
+# El conocimiento ahora vive en NotebookLM
+documents/
+notes/
+exports/
+chroma_db/
+
+# ============================================
+# Archivos obsoletos del proyecto anterior
+# ============================================
+# Payloads y scripts del scraper SII
+payload_*.json
+sii_*.js
+sii_*.html
+
+# Directorios obsoletos
+sql/
+templates/
+.github/workflows/
+.claude/
+
+# ============================================
+# IDE/SO
+# ============================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+git_original/

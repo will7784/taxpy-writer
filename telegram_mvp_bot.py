@@ -119,27 +119,58 @@ class WriterTelegramBot:
         await update.message.chat.send_action(action="typing")
 
         # Diagnóstico paso a paso
-        auth_configured = bool(config.NOTEBOOKLM_AUTH_JSON.strip())
+        auth_raw = config.NOTEBOOKLM_AUTH_JSON
+        auth_len = len(auth_raw)
+        has_quotes = auth_raw.startswith('"') or auth_raw.endswith('"')
+        has_newlines = '\n' in auth_raw
+        has_fallback = (config.BASE_DIR / "notebooklm_auth.json").exists()
         lines = ["📓 *Diagnóstico NotebookLM*", ""]
 
-        if not auth_configured:
+        if auth_len == 0:
             lines.extend(
                 [
-                    "❌ *NOTEBOOKLM_AUTH_JSON* no está configurado.",
+                    "❌ *NOTEBOOKLM_AUTH_JSON* está vacío.",
                     "",
-                    "*Solución:*",
-                    "1. En tu PC local, ejecuta en PowerShell:",
+                    "*Posibles causas:*",
+                    "1. No agregaste la variable en Railway",
+                    "2. Railway aún no hizo redeploy después de agregarla",
+                    "3. El valor fue truncado por ser muy largo",
+                    "",
+                    "*Soluciones (intenta en orden):*",
+                    "",
+                    "*Opción A — Variable en Railway (recomendada):*",
+                    "1. Ve a Railway → tu servicio → Variables",
+                    "2. Crea `NOTEBOOKLM_AUTH_JSON`",
+                    "3. Pega el JSON en UNA sola línea (sin comillas extra)",
+                    "4. Haz clic en *Deploy* para forzar redeploy",
+                    "",
+                    "*Opción B — Archivo fallback:*",
+                    "1. Crea un archivo `notebooklm_auth.json` en la raíz de este repo",
+                    "2. Pega el contenido de `storage_state.json` ahí",
+                    "3. Haz commit + push",
+                    "",
+                    "*Para obtener el JSON en tu PC:*",
                     "```",
                     "Get-Content $env:USERPROFILE\\.notebooklm\\profiles\\default\\storage_state.json -Raw",
                     "```",
-                    "2. Copia TODO el resultado y pégalo como variable",
-                    "   `NOTEBOOKLM_AUTH_JSON` en Railway.",
                 ]
             )
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return
 
-        lines.append("✅ Variable `NOTEBOOKLM_AUTH_JSON` está configurada.")
+        lines.append(f"✅ Variable detectada: *{auth_len}* caracteres.")
+        if has_quotes:
+            lines.append(
+                "⚠️ La variable tiene comillas dobles al inicio/final. "
+                "Esto puede romper el JSON. Intenta quitarlas en Railway."
+            )
+        if has_newlines:
+            lines.append(
+                "⚠️ La variable tiene saltos de línea. "
+                "Asegúrate de que sea UNA sola línea continua."
+            )
+        if has_fallback:
+            lines.append("✅ También existe el archivo fallback `notebooklm_auth.json`.")
 
         # Intentar conectar
         try:

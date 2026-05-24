@@ -31,8 +31,16 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 # NotebookLM
 # ============================================
 NOTEBOOKLM_NOTEBOOK_NAME = os.getenv("NOTEBOOKLM_NOTEBOOK_NAME", "Taxpy Conocimiento")
+
 # Para Railway / headless: pega el contenido de storage_state.json aquí
-NOTEBOOKLM_AUTH_JSON = os.getenv("NOTEBOOKLM_AUTH_JSON", "")
+# Si la variable es muy larga para Railway, sube un archivo notebooklm_auth.json a la raíz
+_auth_json = os.getenv("NOTEBOOKLM_AUTH_JSON", "").strip()
+if not _auth_json:
+    # Fallback: leer desde archivo
+    _auth_file = BASE_DIR / "notebooklm_auth.json"
+    if _auth_file.exists():
+        _auth_json = _auth_file.read_text(encoding="utf-8").strip()
+NOTEBOOKLM_AUTH_JSON = _auth_json
 
 # ============================================
 # Writer

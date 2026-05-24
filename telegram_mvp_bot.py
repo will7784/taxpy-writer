@@ -8,7 +8,9 @@ Solo NotebookLM + GPT-4o para escribir manuales, artículos y guiones.
 from __future__ import annotations
 
 import re
+import sqlite3
 import unicodedata
+from datetime import datetime
 from typing import Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -37,11 +39,55 @@ def _sanitize_filename(name: str) -> str:
     return name or "documento"
 
 
+class SessionStore:
+    """Persiste sesiones en SQLite para sobrevivir reinicios del bot."""
+
+    def __init__(self, db_path) -> None:
+        self.db_path = db_path
+        self._init_db()
+
+    def _init_db(self) -> None:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    chat_id INTEGER NOT NULL,
+                    title TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sessions_chat ON sessions(chat_id)"
+            )
+
+    def save(self, chat_id: int, title: str, content: str, content_type: str) -> None:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            conn.execute(
+                "INSERT INTO sessions (chat_id, title, content, type, created_at) VALUES (?, ?, ?, ?, ?)",
+                (chat_id, title, content, content_type, datetime.utcnow().isoformat()),
+            )
+
+    def get_latest(self, chat_id: int) -> dict | None:
+        with sqlite3.connect(str(self.db_path)) as conn:
+            row = conn.execute(
+                "SELECT title, content, type FROM sessions WHERE chat_id = ? ORDER BY id DESC LIMIT 1",
+                (chat_id,),
+            ).fetchone()
+        if not row:
+            return None
+        return {"title": row[0], "content": row[1], "type": row[2]}
+
+
 class WriterTelegramBot:
     def __init__(self, token: str) -> None:
         self.token = token
         self.writer = WriterEngine()
         self.voice = VoiceProcessor() if config.GOOGLE_API_KEY else None
+        self._store = SessionStore(config.TELEGRAM_DB_PATH)
         # Sesiones en memoria: chat_id -> dict
         self._sessions: dict[int, dict] = {}
 
@@ -69,38 +115,98 @@ class WriterTelegramBot:
     async def _notebook(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Muestra información del notebook conectado."""
+        """Muestra información del notebook conectado con diagnóstico detallado."""
         await update.message.chat.send_action(action="typing")
+
+        # Diagnóstico paso a paso
+        auth_configured = bool(config.NOTEBOOKLM_AUTH_JSON.strip())
+        lines = ["📓 *Diagnóstico NotebookLM*", ""]
+
+        if not auth_configured:
+            lines.extend(
+                [
+                    "❌ *NOTEBOOKLM_AUTH_JSON* no está configurado.",
+                    "",
+                    "*Solución:*",
+                    "1. En tu PC local, ejecuta en PowerShell:",
+                    "```",
+                    "Get-Content $env:USERPROFILE\\.notebooklm\\profiles\\default\\storage_state.json -Raw",
+                    "```",
+                    "2. Copia TODO el resultado y pégalo como variable",
+                    "   `NOTEBOOKLM_AUTH_JSON` en Railway.",
+                ]
+            )
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            return
+
+        lines.append("✅ Variable `NOTEBOOKLM_AUTH_JSON` está configurada.")
+
+        # Intentar conectar
         try:
             notebooks = await self.writer.nb_manager.list_notebooks()
-            current_name = config.NOTEBOOKLM_NOTEBOOK_NAME
-            current_id = ""
-            try:
-                current_id = await self.writer.nb_manager.create_or_get_notebook()
-            except Exception:
-                pass
+            lines.append(f"✅ Conexión exitosa. Cuentas con *{len(notebooks)}* cuaderno(s).")
+        except Exception as e:
+            error_str = str(e).lower()
+            lines.append("❌ Error al conectar con NotebookLM.")
+            if "auth" in error_str or "unauthorized" in error_str or "credential" in error_str:
+                lines.extend(
+                    [
+                        "",
+                        "*Causa probable:* Las credenciales expiraron o son inválidas.",
+                        "",
+                        "*Solución:*",
+                        "1. Ejecuta `notebooklm login` en tu PC local",
+                        "2. Copia el nuevo `storage_state.json`",
+                        "3. Actualiza la variable en Railway",
+                    ]
+                )
+            elif "not installed" in error_str or "notebooklm" in error_str:
+                lines.append(
+                    "*Causa:* La librería `notebooklm-py` no está instalada. "
+                    "Verifica `requirements.txt`."
+                )
+            else:
+                lines.append(f"*Detalle:* `{str(e)[:200]}`")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+            return
 
-            lines = [
-                "📓 *Información del NotebookLM*",
+        # Notebook configurado
+        current_name = config.NOTEBOOKLM_NOTEBOOK_NAME
+        current_id = ""
+        current_sources = 0
+        try:
+            current_id = await self.writer.nb_manager.create_or_get_notebook()
+            sources = await self.writer.nb_manager.get_notebook_sources(current_id)
+            current_sources = len(sources)
+        except Exception:
+            pass
+
+        lines.extend(
+            [
                 "",
                 f"*Cuaderno configurado:* `{current_name}`",
-                f"*ID actual:* `{current_id or 'No conectado'}`",
+                f"*ID actual:* `{current_id or 'No encontrado'}`",
+                f"*Fuentes en el cuaderno:* {current_sources}",
                 "",
-                f"*Cuadernos disponibles en esta cuenta:* {len(notebooks)}",
+                "*Cuadernos disponibles:*",
             ]
-            for nb in notebooks[:10]:
-                marker = " ✅" if nb["id"] == current_id else ""
-                lines.append(f"  • {nb['name']}{marker}")
-            if len(notebooks) > 10:
-                lines.append(f"  ... y {len(notebooks) - 10} más")
+        )
+        found = False
+        for nb in notebooks[:15]:
+            marker = " ✅ (activo)" if nb["id"] == current_id else ""
+            lines.append(f"  • `{nb['name']}`{marker}")
+            if nb["id"] == current_id:
+                found = True
+        if len(notebooks) > 15:
+            lines.append(f"  ... y {len(notebooks) - 15} más")
 
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-        except Exception as e:
-            console.print(f"[red]Notebook info error: {e}[/red]")
-            await update.message.reply_text(
-                "❌ No pude obtener la información del notebook. "
-                "Verifica que NOTEBOOKLM_AUTH_JSON esté configurado correctamente."
+        if not found and current_id:
+            lines.append(
+                "\n⚠️ El cuaderno configurado no aparece en la lista. "
+                "Verifica que `NOTEBOOKLM_NOTEBOOK_NAME` coincida exactamente."
             )
+
+        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
     async def _manual(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -280,20 +386,13 @@ class WriterTelegramBot:
         for chunk in chunks:
             await update.message.reply_text(chunk)
 
-        # 4. Botones de descarga
-        keyboard = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton("📄 Descargar .md", callback_data="dl_md"),
-                    InlineKeyboardButton("📝 Descargar .docx", callback_data="dl_docx"),
-                ]
-            ]
-        )
-        await update.message.reply_text(
-            "¿Quieres guardarlo?", reply_markup=keyboard
-        )
+        # 4. Guardar en DB para persistencia
+        self._store.save(chat_id, topic, content, detected)
 
-        # 5. Voz si está activada
+        # 5. Enviar archivos adjuntos automáticamente
+        await self._send_exports(update, topic, content, detected)
+
+        # 6. Voz si está activada
         if self._sessions[chat_id].get("voice_enabled") and self.voice:
             await update.message.chat.send_action(action="upload_voice")
             try:
@@ -376,6 +475,36 @@ class WriterTelegramBot:
 
     # ── Callbacks (descargas) ─────────────────────────────────
 
+    async def _send_exports(
+        self,
+        update: Update,
+        title: str,
+        content: str,
+        content_type: str,
+    ) -> None:
+        """Envía .md y .docx como documentos adjuntos automáticamente."""
+        try:
+            md_data = exporter.to_markdown(content, title)
+            md_filename = f"{_sanitize_filename(title)}.md"
+            await update.message.reply_document(
+                document=md_data,
+                filename=md_filename,
+                caption=f"📄 {content_type} en Markdown",
+            )
+        except Exception as e:
+            console.print(f"[yellow]Error enviando .md: {e}[/yellow]")
+
+        try:
+            docx_data = exporter.to_docx(content, title)
+            docx_filename = f"{_sanitize_filename(title)}.docx"
+            await update.message.reply_document(
+                document=docx_data,
+                filename=docx_filename,
+                caption=f"📝 {content_type} en Word",
+            )
+        except Exception as e:
+            console.print(f"[yellow]Error enviando .docx: {e}[/yellow]")
+
     async def _handle_callback(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
@@ -384,8 +513,14 @@ class WriterTelegramBot:
         chat_id = int(query.message.chat.id)
         session = self._sessions.get(chat_id)
 
+        # Intentar memoria primero, luego SQLite
         if not session or not session.get("content"):
-            await query.edit_message_text("El contenido expiró. Genera uno nuevo.")
+            session = self._store.get_latest(chat_id)
+
+        if not session or not session.get("content"):
+            await query.edit_message_text(
+                "No encontré contenido reciente. Genera un nuevo documento primero."
+            )
             return
 
         title = session["title"]
@@ -394,11 +529,9 @@ class WriterTelegramBot:
         if query.data == "dl_md":
             data = exporter.to_markdown(content, title)
             filename = f"{_sanitize_filename(title)}.md"
-            mime = "text/markdown"
         elif query.data == "dl_docx":
             data = exporter.to_docx(content, title)
             filename = f"{_sanitize_filename(title)}.docx"
-            mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         else:
             return
 

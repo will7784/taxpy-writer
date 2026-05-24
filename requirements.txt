@@ -17,3 +17,5 @@ python-docx>=1.1.0
 # Utilidades
 python-dotenv>=1.0.0
 rich>=13.0.0
+
+# Force rebuild 1779584385

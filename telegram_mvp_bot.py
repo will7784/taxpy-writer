@@ -231,7 +231,7 @@ class WriterTelegramBot:
 
         lines.append(
             "\n_Gestiona tus cuadernos desde el panel web:_ "
-            f"https://tu-dominio-railway.app/dashboard"
+            "https://taxpy-writer-production.up.railway.app/dashboard"
         )
 
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")

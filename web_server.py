@@ -11,17 +11,20 @@ Incluye:
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request, UploadFile, status
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import config
 from settings_store import store as settings_store
+
+logger = logging.getLogger(__name__)
 
 # ── Configuración FastAPI ─────────────────────────────────
 
@@ -73,10 +76,27 @@ async def _list_notebooks_from_api() -> list[dict]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("Taxpy Writer Admin starting up...")
     yield
+    logger.info("Taxpy Writer Admin shutting down...")
 
 
 app = FastAPI(title="Taxpy Writer Admin", lifespan=lifespan)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled error: %s", exc)
+    if request.url.path.startswith("/api/"):
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Internal error: {str(exc)[:200]}"},
+        )
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "error": f"Error interno: {str(exc)[:200]}"},
+        status_code=500,
+    )
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,

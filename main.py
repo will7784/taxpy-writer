@@ -1,12 +1,12 @@
 """
 Taxpy Writer — Punto de entrada.
-Arranca el bot de Telegram y el servidor web simultáneamente.
+Arranca el servidor web en el main thread y el bot de Telegram en background.
 """
 
 import threading
 
-from telegram_mvp_bot import WriterTelegramBot
 import config
+from telegram_mvp_bot import WriterTelegramBot
 from web_server import run_web_server
 
 if __name__ == "__main__":
@@ -21,14 +21,17 @@ if __name__ == "__main__":
             "Se requiere para redactar contenido con GPT-4o."
         )
 
-    # Iniciar servidor web en background
-    web_thread = threading.Thread(
-        target=run_web_server,
-        kwargs={"host": "0.0.0.0", "port": config.API_SERVER_PORT},
-        daemon=True,
-    )
-    web_thread.start()
+    def _run_bot() -> None:
+        try:
+            bot = WriterTelegramBot(config.TELEGRAM_BOT_TOKEN)
+            bot.run()
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).exception("Bot crashed: %s", e)
 
-    # Iniciar bot de Telegram (bloqueante)
-    bot = WriterTelegramBot(config.TELEGRAM_BOT_TOKEN)
-    bot.run()
+    # Bot en thread daemon (background)
+    bot_thread = threading.Thread(target=_run_bot, daemon=True)
+    bot_thread.start()
+
+    # Web server en main thread (uvicorn maneja señales correctamente aquí)
+    run_web_server(host="0.0.0.0", port=config.API_SERVER_PORT)

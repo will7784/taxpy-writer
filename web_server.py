@@ -163,6 +163,8 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
 
     # Intentar listar notebooks
     notebooks = await _list_notebooks_from_api()
+    # Ordenar por fuentes descendente (los más útiles primero)
+    notebooks.sort(key=lambda nb: nb.get("source_count", 0), reverse=True)
 
     # Verificar conexión NotebookLM
     notebooklm_ok = bool(notebooks)

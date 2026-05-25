@@ -197,6 +197,7 @@ body {
 
 .row-primary { background: rgba(59,130,246,0.05); }
 .row-secondary { background: rgba(245,158,11,0.05); }
+.row-empty { opacity: 0.5; }
 
 /* Tags */
 .tag {

@@ -83,7 +83,7 @@
                 </thead>
                 <tbody>
                     {% for nb in notebooks %}
-                    <tr class="{% if nb.id == primary_id %}row-primary{% endif %} {% if nb.id == secondary_id %}row-secondary{% endif %}">
+                    <tr class="{% if nb.id == primary_id %}row-primary{% endif %} {% if nb.id == secondary_id %}row-secondary{% endif %} {% if nb.source_count == 0 %}row-empty{% endif %}">
                         <td>
                             {{ nb.name }}
                             {% if nb.id == primary_id %}<span class="tag tag-primary">Primario</span>{% endif %}

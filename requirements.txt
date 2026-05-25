@@ -14,8 +14,15 @@ pydub>=0.25.0
 # Exportador DOCX
 python-docx>=1.1.0
 
+# Web server + templates
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+jinja2>=3.1.0
+python-multipart>=0.0.17
+itsdangerous>=2.2.0
+
 # Utilidades
 python-dotenv>=1.0.0
 rich>=13.0.0
 
-# Force rebuild 1779584385
+# Force rebuild 20260525

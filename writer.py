@@ -18,6 +18,7 @@ from rich.console import Console
 
 import config
 from notebooklm_manager import NotebookLMManager
+from settings_store import store as settings_store
 
 console = Console()
 
@@ -71,10 +72,10 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
 
 
 class WriterEngine:
-    def __init__(self) -> None:
-        self.nb_manager = NotebookLMManager(
-            notebook_name=config.NOTEBOOKLM_NOTEBOOK_NAME
-        )
+    def __init__(self, notebook_name: str | None = None) -> None:
+        # Usar notebook_name proporcionado, o leer desde settings, o fallback a config
+        name = notebook_name or settings_store.get("primary_notebook_name") or config.NOTEBOOKLM_NOTEBOOK_NAME
+        self.nb_manager = NotebookLMManager(notebook_name=name)
         self._nb_id: str | None = None
         self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         self._agent_md = _load_agent_md()
@@ -83,6 +84,11 @@ class WriterEngine:
         if self._nb_id is None:
             self._nb_id = await self.nb_manager.create_or_get_notebook()
         return self._nb_id
+
+    def set_notebook(self, name: str) -> None:
+        """Cambia el notebook activo (útil para alternar entre cuadernos)."""
+        self.nb_manager = NotebookLMManager(notebook_name=name)
+        self._nb_id = None
 
     @staticmethod
     def detect_content_type(prompt: str) -> ContentType:

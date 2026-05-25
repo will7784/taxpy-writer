@@ -26,6 +26,7 @@ from rich.console import Console
 
 import config
 import exporter
+from settings_store import store as settings_store
 from voice_processor import VoiceProcessor
 from writer import WriterEngine
 
@@ -115,14 +116,12 @@ class WriterTelegramBot:
     async def _notebook(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Muestra información del notebook conectado con diagnóstico detallado."""
+        """Muestra información de los notebooks conectados con diagnóstico detallado."""
         await update.message.chat.send_action(action="typing")
 
         # Diagnóstico paso a paso
         auth_raw = config.NOTEBOOKLM_AUTH_JSON
         auth_len = len(auth_raw)
-        has_quotes = auth_raw.startswith('"') or auth_raw.endswith('"')
-        has_newlines = '\n' in auth_raw
         has_fallback = (config.BASE_DIR / "notebooklm_auth.json").exists()
         lines = ["📓 *Diagnóstico NotebookLM*", ""]
 
@@ -132,22 +131,12 @@ class WriterTelegramBot:
                     "❌ *NOTEBOOKLM_AUTH_JSON* está vacío.",
                     "",
                     "*Posibles causas:*",
-                    "1. No agregaste la variable en Railway",
-                    "2. Railway aún no hizo redeploy después de agregarla",
-                    "3. El valor fue truncado por ser muy largo",
+                    "1. No existe el archivo `notebooklm_auth.json`",
+                    "2. La variable de entorno no está configurada",
                     "",
-                    "*Soluciones (intenta en orden):*",
-                    "",
-                    "*Opción A — Variable en Railway (recomendada):*",
-                    "1. Ve a Railway → tu servicio → Variables",
-                    "2. Crea `NOTEBOOKLM_AUTH_JSON`",
-                    "3. Pega el JSON en UNA sola línea (sin comillas extra)",
-                    "4. Haz clic en *Deploy* para forzar redeploy",
-                    "",
-                    "*Opción B — Archivo fallback:*",
-                    "1. Crea un archivo `notebooklm_auth.json` en la raíz de este repo",
-                    "2. Pega el contenido de `storage_state.json` ahí",
-                    "3. Haz commit + push",
+                    "*Solución:*",
+                    "1. Sube el archivo `storage_state.json` desde el panel web",
+                    "2. O agrega la variable `NOTEBOOKLM_AUTH_JSON` en Railway",
                     "",
                     "*Para obtener el JSON en tu PC:*",
                     "```",
@@ -158,19 +147,9 @@ class WriterTelegramBot:
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return
 
-        lines.append(f"✅ Variable detectada: *{auth_len}* caracteres.")
-        if has_quotes:
-            lines.append(
-                "⚠️ La variable tiene comillas dobles al inicio/final. "
-                "Esto puede romper el JSON. Intenta quitarlas en Railway."
-            )
-        if has_newlines:
-            lines.append(
-                "⚠️ La variable tiene saltos de línea. "
-                "Asegúrate de que sea UNA sola línea continua."
-            )
+        lines.append(f"✅ Auth detectada: *{auth_len}* caracteres.")
         if has_fallback:
-            lines.append("✅ También existe el archivo fallback `notebooklm_auth.json`.")
+            lines.append("✅ Usando archivo fallback `notebooklm_auth.json`.")
 
         # Intentar conectar
         try:
@@ -187,8 +166,8 @@ class WriterTelegramBot:
                         "",
                         "*Solución:*",
                         "1. Ejecuta `notebooklm login` en tu PC local",
-                        "2. Copia el nuevo `storage_state.json`",
-                        "3. Actualiza la variable en Railway",
+                        "2. Sube el nuevo `storage_state.json` desde el panel web",
+                        "3. O actualiza la variable en Railway",
                     ]
                 )
             elif "not installed" in error_str or "notebooklm" in error_str:
@@ -201,41 +180,59 @@ class WriterTelegramBot:
             await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
             return
 
-        # Notebook configurado
-        current_name = config.NOTEBOOKLM_NOTEBOOK_NAME
-        current_id = ""
-        current_sources = 0
+        # Leer configuración actual desde settings
+        primary_name = settings_store.get("primary_notebook_name", config.NOTEBOOKLM_NOTEBOOK_NAME)
+        secondary_name = settings_store.get("secondary_notebook_name", "")
+        primary_id = ""
+        secondary_id = ""
+        primary_sources = 0
+
         try:
-            current_id = await self.writer.nb_manager.create_or_get_notebook()
-            sources = await self.writer.nb_manager.get_notebook_sources(current_id)
-            current_sources = len(sources)
+            primary_id = await self.writer.nb_manager.create_or_get_notebook()
+            sources = await self.writer.nb_manager.get_notebook_sources(primary_id)
+            primary_sources = len(sources)
         except Exception:
             pass
 
         lines.extend(
             [
                 "",
-                f"*Cuaderno configurado:* `{current_name}`",
-                f"*ID actual:* `{current_id or 'No encontrado'}`",
-                f"*Fuentes en el cuaderno:* {current_sources}",
+                f"*🥇 Cuaderno primario:* `{primary_name}`",
+                f"*ID:* `{primary_id or 'No encontrado'}`",
+                f"*Fuentes:* {primary_sources}",
+            ]
+        )
+
+        if secondary_name:
+            lines.extend(
+                [
+                    "",
+                    f"*🥈 Cuaderno secundario:* `{secondary_name}`",
+                    f"*ID:* `{secondary_id or 'No configurado'}`",
+                ]
+            )
+
+        lines.extend(
+            [
                 "",
                 "*Cuadernos disponibles:*",
             ]
         )
-        found = False
         for nb in notebooks[:15]:
-            marker = " ✅ (activo)" if nb["id"] == current_id else ""
+            markers = []
+            if nb["id"] == primary_id:
+                markers.append("🥇")
+            if nb.get("name") == secondary_name:
+                markers.append("🥈")
+            marker = " " + " ".join(markers) if markers else ""
             lines.append(f"  • `{nb['name']}`{marker}")
-            if nb["id"] == current_id:
-                found = True
         if len(notebooks) > 15:
             lines.append(f"  ... y {len(notebooks) - 15} más")
 
-        if not found and current_id:
-            lines.append(
-                "\n⚠️ El cuaderno configurado no aparece en la lista. "
-                "Verifica que `NOTEBOOKLM_NOTEBOOK_NAME` coincida exactamente."
-            )
+        lines.append(
+            "\n_Gestiona tus cuadernos desde el panel web:_ "
+            f"https://tu-dominio-railway.app/dashboard"
+        )
 
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 

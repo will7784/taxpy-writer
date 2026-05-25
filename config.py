@@ -31,6 +31,7 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 # NotebookLM
 # ============================================
 NOTEBOOKLM_NOTEBOOK_NAME = os.getenv("NOTEBOOKLM_NOTEBOOK_NAME", "Taxpy Conocimiento")
+NOTEBOOKLM_NOTEBOOK_SECONDARY = os.getenv("NOTEBOOKLM_NOTEBOOK_SECONDARY", "")
 
 # Para Railway / headless: pega el contenido de storage_state.json aquí
 # Si la variable es muy larga para Railway, sube un archivo notebooklm_auth.json a la raíz
@@ -60,6 +61,13 @@ EXPORTS_DIR.mkdir(exist_ok=True)
 AGENT_MD_FILE = BASE_DIR / "agent.md"
 
 # ============================================
-# Railway / Server (healthcheck mínimo)
+# Railway / Server (healthcheck + frontend)
 # ============================================
 API_SERVER_PORT = int(os.getenv("PORT", os.getenv("API_SERVER_PORT", "8000")))
+
+# ============================================
+# Admin panel credentials (fallback seguro)
+# ============================================
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "will")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "anwi7784")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "taxpy-writer-secret-change-me")

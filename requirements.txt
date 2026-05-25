@@ -6,6 +6,8 @@ openai>=1.55.0
 
 # NotebookLM integration
 notebooklm-py
+playwright
+httpx
 
 # Voz (Gemini STT/TTS)
 google-genai>=1.55.0

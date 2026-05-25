@@ -594,4 +594,4 @@ class WriterTelegramBot:
             f"[dim]NotebookLM: {config.NOTEBOOKLM_NOTEBOOK_NAME}[/dim]\n"
             f"[dim]LLM: {config.OPENAI_MODEL} | {voice_status}[/dim]"
         )
-        app.run_polling(allowed_updates=Update.ALL_TYPES)
+        app.run_polling(allowed_updates=Update.ALL_TYPES, stop_signals=())

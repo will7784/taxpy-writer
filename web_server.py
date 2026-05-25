@@ -93,8 +93,9 @@ async def global_exception_handler(request: Request, exc: Exception):
             content={"detail": f"Internal error: {str(exc)[:200]}"},
         )
     return templates.TemplateResponse(
+        request,
         "login.html",
-        {"request": request, "error": f"Error interno: {str(exc)[:200]}"},
+        {"error": f"Error interno: {str(exc)[:200]}"},
         status_code=500,
     )
 app.add_middleware(
@@ -117,7 +118,7 @@ def _is_authenticated(request: Request) -> bool:
 async def login_page(request: Request, error: Optional[str] = None):
     if _is_authenticated(request):
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
-    return templates.TemplateResponse("login.html", {"request": request, "error": error})
+    return templates.TemplateResponse(request, "login.html", {"error": error})
 
 
 @app.post("/login")
@@ -164,7 +165,7 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
     # Bot siempre "online" mientras este servidor corre (son el mismo proceso)
     bot_online = True
 
-    return templates.TemplateResponse("dashboard.html", {
+    return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "bot_online": bot_online,
         "notebooklm_ok": notebooklm_ok,

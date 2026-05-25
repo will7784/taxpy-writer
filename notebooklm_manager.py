@@ -167,14 +167,16 @@ class NotebookLMManager:
         """Lista los notebooks disponibles en la cuenta."""
         async with await NotebookLMClient.from_storage() as client:
             notebooks = await client.notebooks.list()
-            return [
-                {
+            result = []
+            for nb in notebooks:
+                # notebooklm-py usa atributos variables para el nombre
+                name = getattr(nb, "name", None) or getattr(nb, "title", None) or getattr(nb, "display_name", None) or getattr(nb, "label", None) or "Sin nombre"
+                result.append({
                     "id": str(nb.id),
-                    "name": getattr(nb, "name", "Sin nombre"),
+                    "name": str(name),
                     "created_at": getattr(nb, "created_at", ""),
-                }
-                for nb in notebooks
-            ]
+                })
+            return result
 
     async def get_notebook_sources(self, notebook_id: str) -> list[dict[str, Any]]:
         """Lista las fuentes de un notebook específico."""

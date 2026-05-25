@@ -50,6 +50,7 @@ async def _list_notebooks_from_api() -> list[dict]:
     """Lista notebooks directo desde NotebookLM API."""
     mgr = _nb_manager()
     if not mgr:
+        settings_store.set("notebooklm_last_error", "notebooklm-py no está disponible (fallo al importar)")
         return []
     try:
         notebooks = await mgr.list_notebooks()
@@ -67,8 +68,12 @@ async def _list_notebooks_from_api() -> list[dict]:
                 "source_count": source_count,
             })
         settings_store.save_notebooks(result)
+        settings_store.set("notebooklm_last_error", "")
         return result
-    except Exception:
+    except Exception as e:
+        error_msg = f"{type(e).__name__}: {str(e)}"
+        settings_store.set("notebooklm_last_error", error_msg)
+        logger.exception("NotebookLM connection failed: %s", e)
         return settings_store.get_notebooks()
 
 
@@ -161,6 +166,7 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
 
     # Verificar conexión NotebookLM
     notebooklm_ok = bool(notebooks)
+    notebooklm_error = settings_store.get("notebooklm_last_error", "")
 
     # Bot siempre "online" mientras este servidor corre (son el mismo proceso)
     bot_online = True
@@ -169,6 +175,7 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
         "request": request,
         "bot_online": bot_online,
         "notebooklm_ok": notebooklm_ok,
+        "notebooklm_error": notebooklm_error,
         "primary_name": primary_name,
         "secondary_name": secondary_name,
         "primary_id": primary_id,

@@ -47,6 +47,12 @@
                     <span class="status-label">Cuaderno secundario:</span>
                     <span class="status-value">{{ secondary_name or 'No configurado' }}</span>
                 </div>
+                {% if notebooklm_error %}
+                <div class="alert alert-error" style="margin-top:1rem;font-size:0.85rem;">
+                    <strong>Error NotebookLM:</strong><br>
+                    <code>{{ notebooklm_error }}</code>
+                </div>
+                {% endif %}
             </div>
 
             <!-- Subir credenciales -->

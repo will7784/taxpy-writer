@@ -225,8 +225,18 @@ async def auth_upload(request: Request, auth_file: UploadFile):
         auth_path = config.BASE_DIR / "notebooklm_auth.json"
         auth_path.write_bytes(content)
 
+        # Sincronizar a la ruta que notebooklm-py espera
+        try:
+            import os
+            target_dir = Path("/root/.notebooklm/profiles/default")
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_path = target_dir / "storage_state.json"
+            target_path.write_bytes(content)
+        except Exception as sync_err:
+            logger.warning("No se pudo sincronizar a ~/.notebooklm: %s", sync_err)
+
         return RedirectResponse(
-            url="/dashboard?message=Credenciales+actualizadas+correctamente.+Reinicia+el+servicio+para+aplicar.",
+            url="/dashboard?message=Credenciales+actualizadas+y+aplicadas+correctamente.",
             status_code=status.HTTP_302_FOUND,
         )
     except json.JSONDecodeError:

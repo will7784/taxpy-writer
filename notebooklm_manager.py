@@ -130,9 +130,13 @@ class NotebookLMManager:
         question: str,
     ) -> dict[str, Any]:
         """Hace una pregunta al notebook y retorna respuesta con citas."""
+        import asyncio
         console.print(f"[dim]🔍 Preguntando a NotebookLM...[/dim]")
         async with await NotebookLMClient.from_storage() as client:
-            result = await client.chat.ask(notebook_id, question)
+            result = await asyncio.wait_for(
+                client.chat.ask(notebook_id, question),
+                timeout=30.0,
+            )
             return {
                 "answer": result.answer if hasattr(result, "answer") else str(result),
                 "citations": [],  # TODO: extraer citas si la API las expone
@@ -165,8 +169,9 @@ class NotebookLMManager:
 
     async def list_notebooks(self) -> list[dict[str, Any]]:
         """Lista los notebooks disponibles en la cuenta."""
+        import asyncio
         async with await NotebookLMClient.from_storage() as client:
-            notebooks = await client.notebooks.list()
+            notebooks = await asyncio.wait_for(client.notebooks.list(), timeout=30.0)
             result = []
             for nb in notebooks:
                 # notebooklm-py usa atributos variables para el nombre
@@ -180,8 +185,9 @@ class NotebookLMManager:
 
     async def get_notebook_sources(self, notebook_id: str) -> list[dict[str, Any]]:
         """Lista las fuentes de un notebook específico."""
+        import asyncio
         async with await NotebookLMClient.from_storage() as client:
-            sources = await client.sources.list(notebook_id)
+            sources = await asyncio.wait_for(client.sources.list(notebook_id), timeout=30.0)
             return [
                 {
                     "id": str(s.id),

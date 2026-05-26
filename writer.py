@@ -153,15 +153,27 @@ class WriterEngine:
             ),
         ]
         findings: list[str] = []
-        for i, q in enumerate(questions, 1):
+        import asyncio
+
+        async def _ask_one(i: int, q: str) -> str:
             try:
-                console.print(f"  [dim]🔍 NotebookLM research {i}/3...[/dim]")
+                console.print(f"  [dim]🔍 NotebookLM research {i}/{len(questions)}...[/dim]")
                 result = await self.nb_manager.ask_question(nb_id, q)
                 answer = result.get("answer", "")
-                if answer and len(answer) > 50:
-                    findings.append(answer)
+                return answer if answer and len(answer) > 50 else ""
             except Exception as e:
                 console.print(f"  [yellow]⚠️ Research {i} falló: {e}[/yellow]")
+                return ""
+
+        # Ejecutar todas las preguntas en paralelo con timeout global
+        tasks = [asyncio.create_task(_ask_one(i, q)) for i, q in enumerate(questions, 1)]
+        try:
+            answers = await asyncio.wait_for(asyncio.gather(*tasks), timeout=60.0)
+        except asyncio.TimeoutError:
+            console.print("[yellow]⚠️ Research global timeout (60s). Usando respuestas parciales.[/yellow]")
+            answers = [t.result() if t.done() else "" for t in tasks]
+
+        findings = [a for a in answers if a]
         return "\n\n---\n\n".join(findings) if findings else ""
 
     async def generate_outline(

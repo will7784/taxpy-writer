@@ -370,14 +370,18 @@ class WriterTelegramBot:
         # 1. Research (si no viene pre-calculado)
         if not research:
             await update.message.chat.send_action(action="typing")
-            await update.message.reply_text(
-                f"🔍 Investigando *{topic}* en NotebookLM...",
+            status_research = await update.message.reply_text(
+                f"🔍 Investigando *{topic}* en NotebookLM... (puede tardar hasta 60 segundos)",
                 parse_mode="Markdown",
             )
             try:
                 research = await self.writer.research(topic)
+                await status_research.delete()
             except Exception as e:
                 console.print(f"[red]Research error: {e}[/red]")
+                await status_research.edit_text(
+                    f"⚠️ NotebookLM tardó demasiado. Escribiré con el conocimiento que tengo disponible."
+                )
                 research = ""
 
         # 2. Write

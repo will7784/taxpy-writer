@@ -589,7 +589,7 @@ class WriterTelegramBot:
         if self.voice:
             await update.message.chat.send_action(action="upload_voice")
             try:
-                voice_bytes = await self.voice.synthesize(content[:1200])
+                voice_bytes = await self.voice.synthesize(content)
                 await update.message.reply_voice(
                     voice=voice_bytes,
                     caption="🎙️ ClaudIA",

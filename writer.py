@@ -37,14 +37,28 @@ def _load_agent_md() -> str:
 
 _SYSTEM_PROMPTS: dict[ContentType, str] = {
     "manual": (
-        "Eres un experto tributario chileno y redactor técnico. "
-        "Escribe un manual completo, didáctico y riguroso en tono profesional. "
-        "Estructura el contenido en capítulos y subcapítulos numerados. "
-        "Cada apartado DEBE incluir: definición clara, base legal específica "
-        "(artículo, ley, oficio o circular), desarrollo explicativo paso a paso, "
-        "errores comunes, y un ejemplo práctico desarrollado de al menos 1 párrafo. "
-        "Cita siempre la norma entre paréntesis después de cada afirmación de derecho. "
-        "Usa formato Markdown (# para capítulos, ## para subcapítulos)."
+        "Eres un experto tributario chileno y redactor técnico senior. "
+        "Escribe un manual EXHAUSTIVO, profundo y riguroso. Este manual debe ser "
+        "suficientemente extenso y detallado como para publicarse como ebook o libro. "
+        "\n\nREQUISITOS DE EXTENSIÓN Y PROFUNDIDAD:\n"
+        "- Mínimo 5 capítulos principales, cada uno con 3-5 subcapítulos.\n"
+        "- Cada subcapítulo debe tener entre 400 y 800 palabras de desarrollo puro.\n"
+        "- El manual completo debe superar las 3000 palabras. Usa TODOS los tokens disponibles.\n"
+        "- NO resumas. NO te quedes corto. Si te quedan tokens, sigue desarrollando.\n"
+        "\n\nESTRUCTURA OBLIGATORIA POR SUBCAPÍTULO:\n"
+        "1. Definición clara y completa del concepto.\n"
+        "2. Base legal específica con artículo, ley, oficio o circular (cita textual si aplica).\n"
+        "3. Desarrollo explicativo paso a paso, con profundidad (no superficial).\n"
+        "4. Errores comunes que cometen los contribuyentes y cómo evitarlos.\n"
+        "5. Ejemplo práctico DESARROLLADO de mínimo 2-3 párrafos con sujetos ficticios, montos, fechas y resultado concreto.\n"
+        "6. Tip práctico al final del subcapítulo (\"Para evitar problemas, recuerda que...\").\n"
+        "\n\nREGLAS DE ESTILO:\n"
+        "- Usa formato Markdown (# Capítulo, ## Subcapítulo, ### Apartado).\n"
+        "- Cita siempre la norma entre paréntesis después de cada afirmación de derecho.\n"
+        "- Tono profesional pero accesible para contadores y abogados.\n"
+        "- NUNCA uses frases como 'en resumen', 'para concluir' antes del final.\n"
+        "- NUNCA repitas información entre subcapítulos.\n"
+        "- Al final del manual incluye una sección de Referencias Normativas listando todas las normas citadas."
     ),
     "articulo": (
         "Eres un experto tributario chileno y columnista especializado. "
@@ -113,20 +127,29 @@ class WriterEngine:
         questions = [
             (
                 f"Responde como experto tributario chileno sobre: {topic}. "
-                "Incluye EXACTAMENTE: (a) artículos del Código Tributario y Ley de Renta aplicables, "
-                "(b) oficios o circulares del SII relacionados, (c) jurisprudencia relevante si existe. "
-                "Cita siempre el número de artículo y la norma."
+                "Incluye EXACTAMENTE: (a) artículos del Código Tributario y Ley de Renta aplicables con números exactos, "
+                "(b) oficios o circulares del SII relacionados con números y fechas, (c) jurisprudencia relevante si existe. "
+                "Cita siempre el número de artículo y la norma. Sé exhaustivo, no resumas."
             ),
             (
                 f"¿Qué errores cometen los contribuyentes respecto a {topic}? "
-                "Incluye sanciones, plazos legales y consecuencias de incumplimiento. "
+                "Incluye sanciones, plazos legales, consecuencias de incumplimiento y casos reales si los conoces. "
                 "Cita artículos específicos del Código Tributario."
             ),
             (
-                f"Proporciona un ejemplo práctico completo sobre {topic}: "
-                "sujeto (empresa o persona), hechos concretos (montos, fechas), "
-                "aplicación de la norma y resultado final. "
-                "Incluye la base legal aplicable al caso."
+                f"Proporciona un ejemplo práctico COMPLETO y DESARROLLADO sobre {topic}: "
+                "sujeto (empresa o persona con nombre ficticio), hechos concretos (montos, fechas, montos exactos), "
+                "aplicación de la norma paso a paso y resultado final con cifras. "
+                "Incluye la base legal aplicable al caso. El ejemplo debe tener mínimo 200 palabras."
+            ),
+            (
+                f"¿Cuáles son los pasos prácticos, trámites, formularios y plazos específicos "
+                f"que un contribuyente debe seguir respecto a {topic}? "
+                "Incluye formularios SII, plazos en días hábiles, y requisitos documentales."
+            ),
+            (
+                f"¿Existen excepciones, beneficios tributarios o régimenes especiales aplicables a {topic}? "
+                "Incluye montos de exención, topes, porcentajes específicos y artículos de ley."
             ),
         ]
         findings: list[str] = []
@@ -192,10 +215,12 @@ class WriterEngine:
         if outline:
             user_prompt += f"Índice aprobado por el usuario:\n{outline}\n\n"
         user_prompt += (
-            "Escribe el contenido completo y detallado siguiendo el índice si existe. "
+            "Escribe el contenido COMPLETO, EXTENSO y PROFUNDO siguiendo el índice si existe. "
+            "NO te quedes corto. NO resumas. Desarrolla cada punto con máximo detalle. "
+            "Usa TODOS los tokens disponibles para entregar el manual más completo posible. "
             "No agregues notas al pie ni disclaimers sobre ser IA. "
             "Solo entrega el contenido profesional listo para publicar. "
-            "Recuerda: cada apartado debe tener definición, base legal, desarrollo, ejemplo práctico y tip."
+            "Recuerda: cada subcapítulo debe tener definición, base legal, desarrollo profundo, ejemplo práctico extenso y tip."
         )
 
         console.print(f"  [dim]✍️ GPT-4o redactando ({content_type})...[/dim]")

@@ -68,12 +68,14 @@ class VoiceProcessor:
             return (response.text or "").strip()
         except Exception as e:
             console.print(f"[red]❌ Error STT: {e}[/red]")
-            raise
+            raise RuntimeError(f"Error en transcripción Gemini STT: {e}")
 
     def _normalize_audio(self, audio_bytes: bytes, mime_type: str) -> bytes:
         """Convierte audio a WAV mono 16kHz para Gemini."""
         if not AudioSegment:
-            return audio_bytes
+            raise RuntimeError(
+                "pydub no está disponible. Instala: pip install pydub"
+            )
 
         try:
             # Determinar formato desde mime_type
@@ -92,8 +94,13 @@ class VoiceProcessor:
             seg.export(buf, format="wav")
             return buf.getvalue()
         except Exception as e:
-            console.print(f"[yellow]⚠️ No se pudo normalizar audio: {e}. Usando original.[/yellow]")
-            return audio_bytes
+            error_str = str(e).lower()
+            if "ffmpeg" in error_str or "avconv" in error_str or "converter" in error_str:
+                raise RuntimeError(
+                    f"ffmpeg no está instalado o no se encontró en el sistema. "
+                    f"Error original: {e}"
+                )
+            raise RuntimeError(f"Error normalizando audio con pydub: {e}")
 
     async def synthesize(self, text: str) -> bytes:
         """
@@ -135,7 +142,7 @@ class VoiceProcessor:
 
         except Exception as e:
             console.print(f"[red]❌ Error TTS: {e}[/red]")
-            raise
+            raise RuntimeError(f"Error en síntesis Gemini TTS: {e}")
 
     def _pcm_to_opus(self, pcm_bytes: bytes, sample_rate: int = 24000) -> bytes:
         """Convierte PCM raw a OGG/Opus (formato de Telegram voice messages)."""

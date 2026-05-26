@@ -493,7 +493,8 @@ class WriterTelegramBot:
             return
         if not self.voice:
             await update.message.reply_text(
-                "🎙️ El procesamiento de voz no está configurado."
+                "🎙️ El procesamiento de voz no está configurado.\n\n"
+                "Agrega la variable `GOOGLE_API_KEY` en Railway para activarlo."
             )
             return
 
@@ -504,15 +505,38 @@ class WriterTelegramBot:
             transcript = await self.voice.transcribe(bytes(voice_bytes))
             if not transcript:
                 await update.message.reply_text(
-                    "🎙️ No pude entender el audio. Intenta hablar más claro."
+                    "🎙️ No pude entender el audio. Intenta hablar más claro o un poco más lento."
                 )
                 return
             await update.message.reply_text(f'🎙️ Entendí: "{transcript}"')
             await self._process_voice_chat(update, transcript)
+        except RuntimeError as e:
+            # Errores conocidos de VoiceProcessor (ffmpeg, API no disponible, etc.)
+            error_msg = str(e).lower()
+            console.print(f"[red]Voice RuntimeError: {e}[/red]")
+            if "ffmpeg" in error_msg or "pydub" in error_msg or "normalizar" in error_msg:
+                await update.message.reply_text(
+                    "🎙️ Error de conversión de audio.\n"
+                    "No se encontró `ffmpeg` en el servidor. "
+                    "Si eres admin, revisa que esté instalado en el Dockerfile."
+                )
+            elif "gemini" in error_msg or "client" in error_msg or "api key" in error_msg:
+                await update.message.reply_text(
+                    "🎙️ Error con la API de voz (Gemini).\n"
+                    "Revisa que la `GOOGLE_API_KEY` sea válida y tenga permisos."
+                )
+            else:
+                await update.message.reply_text(
+                    f"🎙️ Error de voz: {e}\n\nIntenta con texto."
+                )
         except Exception as e:
+            import traceback
             console.print(f"[red]Voice handler error: {e}[/red]")
+            console.print(traceback.format_exc())
             await update.message.reply_text(
-                "Ocurrió un error procesando el audio. Intenta con texto."
+                "🎙️ Error inesperado procesando el audio.\n"
+                f"_Detalle técnico: `{type(e).__name__}`_\n\n"
+                "Intenta con texto o contacta al administrador si persiste."
             )
 
     async def _process_voice_chat(

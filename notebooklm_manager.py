@@ -55,20 +55,76 @@ class NotebookLMManager:
         )
 
     async def create_or_get_notebook(self) -> str:
-        """Crea o recupera el notebook de Taxpy."""
-        # Revisar si ya tenemos uno guardado
+        """Crea o recupera el notebook de Taxpy. Evita duplicados y limpia notebooks vacíos."""
+        target_name = self.notebook_name.strip().lower()
+
+        # 1. Validar notebook guardado localmente
+        local_id = None
         existing = self._state.get("notebooks", {}).get(self.notebook_name)
         if existing and existing.get("id"):
+            local_id = existing["id"]
             try:
                 async with await NotebookLMClient.from_storage() as client:
-                    nb = await client.notebooks.get(existing["id"])
-                    if nb:
-                        console.print(f"[green]✅ Notebook existente: {nb.id}[/green]")
-                        return str(nb.id)
-            except Exception:
-                pass  # Caer a crear nuevo
+                    nb = await client.notebooks.get(local_id)
+                    if nb and nb.sources_count > 0:
+                        console.print(f"[green]✅ Notebook local válido: {local_id} ({nb.sources_count} fuentes)[/green]")
+                        return local_id
+                    else:
+                        console.print(f"[yellow]⚠️ Notebook local tiene 0 fuentes o no existe: {local_id}[/yellow]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Notebook local no accesible: {e}[/yellow]")
+                local_id = None
 
-        # Crear nuevo
+        # 2. Buscar en NotebookLM por nombre (evitar crear duplicados)
+        console.print(f"[blue]🔍 Buscando notebook '{self.notebook_name}' en NotebookLM...[/blue]")
+        best_id: str | None = None
+        best_sources = -1
+        duplicates_to_delete: list[str] = []
+
+        try:
+            async with await NotebookLMClient.from_storage() as client:
+                notebooks = await client.notebooks.list()
+                for nb in notebooks:
+                    nb_name = (nb.title or "").strip().lower()
+                    if nb_name == target_name:
+                        nb_id = str(nb.id)
+                        src_count = nb.sources_count
+                        if src_count > best_sources:
+                            if best_id is not None:
+                                duplicates_to_delete.append(best_id)
+                            best_id = nb_id
+                            best_sources = src_count
+                        else:
+                            duplicates_to_delete.append(nb_id)
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Error listando notebooks: {e}[/yellow]")
+
+        # 3. Eliminar duplicados vacíos SOLO si existe un candidato con fuentes
+        # (evitar borrar notebooks que el usuario pueda querer mantener vacíos intencionalmente)
+        if duplicates_to_delete and best_sources > 0:
+            console.print(f"[yellow]🗑️ Eliminando {len(duplicates_to_delete)} notebook(s) duplicado(s) vacío(s)...[/yellow]")
+            try:
+                async with await NotebookLMClient.from_storage() as client:
+                    for dup_id in duplicates_to_delete:
+                        try:
+                            await client.notebooks.delete(dup_id)
+                            console.print(f"  [dim]🗑️ Eliminado duplicado: {dup_id}[/dim]")
+                        except Exception as e:
+                            console.print(f"  [dim]⚠️ No se pudo eliminar {dup_id}: {e}[/dim]")
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Error eliminando duplicados: {e}[/yellow]")
+
+        # 4. Si encontramos uno válido por nombre, usarlo
+        if best_id and best_sources > 0:
+            console.print(f"[green]✅ Notebook encontrado por nombre: {best_id} ({best_sources} fuentes)[/green]")
+            self._state.setdefault("notebooks", {})[self.notebook_name] = {
+                "id": best_id,
+                "created_at": __import__("datetime").datetime.now().isoformat(),
+            }
+            self._save_state()
+            return best_id
+
+        # 5. Crear nuevo solo si no hay ninguno válido
         console.print(f"[blue]📓 Creando notebook '{self.notebook_name}'...[/blue]")
         async with await NotebookLMClient.from_storage() as client:
             nb = await client.notebooks.create(self.notebook_name)

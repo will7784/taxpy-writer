@@ -746,6 +746,8 @@ class WriterTelegramBot:
 
     def run(self) -> None:
         app = Application.builder().token(self.token).build()
+        # Ignorar updates pendientes al reiniciar (evita Conflict con instancias viejas)
+        app.drop_pending_updates = True
 
         app.add_handler(CommandHandler("start", self._start))
         app.add_handler(CommandHandler("notebook", self._notebook))

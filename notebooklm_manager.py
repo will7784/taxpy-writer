@@ -253,5 +253,21 @@ class NotebookLMManager:
                 for s in sources
             ]
 
+    async def save_note(self, notebook_id: str, title: str, content: str) -> str:
+        """Guarda una nota en el notebook. Si ya existe una con el mismo título, la actualiza."""
+        async with await NotebookLMClient.from_storage() as client:
+            notes = await client.notes.list(notebook_id)
+            for note in notes:
+                if note.title == title:
+                    await client.notes.update(notebook_id, note.id, content, title)
+                    return note.id
+            new_note = await client.notes.create(notebook_id, title, content)
+            return new_note.id
+
+    async def delete_note(self, notebook_id: str, note_id: str) -> bool:
+        """Elimina una nota del notebook."""
+        async with await NotebookLMClient.from_storage() as client:
+            return await client.notes.delete(notebook_id, note_id)
+
     def list_local_sources(self) -> list[dict[str, Any]]:
         return list(self._state.get("sources", {}).values())

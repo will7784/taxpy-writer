@@ -377,6 +377,14 @@ class WriterTelegramBot:
         chat_id = int(update.effective_chat.id)
         detected = content_type or self.writer.detect_content_type(topic)
 
+        # 0. Guardar tema como nota en NotebookLM para que el notebook tenga contexto
+        try:
+            nb_id = await self.writer.nb_manager.create_or_get_notebook()
+            note_title = f"Tema: {topic[:50]}"
+            await self.writer.nb_manager.save_note(nb_id, note_title, topic)
+        except Exception as e:
+            console.print(f"[yellow]No se pudo guardar nota: {e}[/yellow]")
+
         # 1. Research (si no viene pre-calculado)
         if not research:
             await update.message.chat.send_action(action="typing")
@@ -484,7 +492,86 @@ class WriterTelegramBot:
 
         # Mensaje libre normal
         detected = self.writer.detect_content_type(text)
-        await self._process_request(update, text, detected)
+        if detected in ("manual", "articulo", "guion", "historia"):
+            await self._process_request(update, text, detected)
+        else:
+            # Por defecto: modo chat conversacional usando NotebookLM directo
+            await self._process_chat(update, text)
+
+    @staticmethod
+    def _clean_notebooklm_refs(text: str) -> str:
+        """Elimina referencias numéricas tipo [1], [2,3] de respuestas de NotebookLM."""
+        cleaned = re.sub(r'\[\d+(?:[,‑-]\d+)*\]', '', text)
+        cleaned = re.sub(r' +', ' ', cleaned)
+        cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned)
+        return cleaned.strip()
+
+    async def _process_chat(
+        self,
+        update: Update,
+        text: str,
+    ) -> None:
+        """Procesa una conversación de chat: guarda nota en NotebookLM → responde con NotebookLM directo."""
+        chat_id = int(update.effective_chat.id)
+
+        await update.message.chat.send_action(action="typing")
+        status_msg = await update.message.reply_text("💬 Consultando a NotebookLM...")
+
+        try:
+            # 1. Asegurar notebook
+            nb_id = await self.writer.nb_manager.create_or_get_notebook()
+
+            # 2. Guardar pregunta como nota en NotebookLM
+            note_title = f"Consulta {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            await self.writer.nb_manager.save_note(nb_id, note_title, text)
+
+            # 3. Preguntar directamente a NotebookLM
+            result = await self.writer.nb_manager.ask_question(nb_id, text)
+            answer = result.get("answer", "")
+
+            if not answer:
+                await status_msg.edit_text("💬 No encontré una respuesta para eso en mis fuentes.")
+                return
+
+            # 4. Limpiar referencias numéricas [1], [2], etc.
+            content = self._clean_notebooklm_refs(answer)
+
+        except Exception as e:
+            console.print(f"[red]Chat error: {e}[/red]")
+            import traceback
+            console.print(traceback.format_exc())
+            await status_msg.edit_text(
+                "❌ Ocurrió un error consultando a NotebookLM. Intenta de nuevo."
+            )
+            return
+
+        await status_msg.delete()
+
+        # Guardar sesión ligera
+        self._sessions[chat_id] = {
+            "title": text,
+            "content": content,
+            "type": "conversacion",
+            "outline": "",
+            "research": content,
+            "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+            "outline_pending": False,
+        }
+
+        # 5. Enviar texto
+        await update.message.reply_text(content)
+
+        # 6. Voz si está activada (modo legacy /voz on)
+        if self._sessions[chat_id].get("voice_enabled") and self.voice:
+            await update.message.chat.send_action(action="upload_voice")
+            try:
+                voice_bytes = await self.voice.synthesize(content[:3800])
+                await update.message.reply_voice(
+                    voice=voice_bytes,
+                    caption="🎙️ ClaudIA",
+                )
+            except Exception as e:
+                console.print(f"[yellow]TTS falló: {e}[/yellow]")
 
     async def _handle_voice(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -544,61 +631,27 @@ class WriterTelegramBot:
         update: Update,
         transcript: str,
     ) -> None:
-        """Procesa una conversación por voz: audio de entrada → ClaudIA responde con texto + audio."""
-        chat_id = int(update.effective_chat.id)
-        topic = transcript
+        """Procesa una conversación por voz: guarda nota → NotebookLM responde → texto + audio."""
+        await self._process_chat(update, transcript)
 
-        # 1. Research
-        await update.message.chat.send_action(action="typing")
-        try:
-            research = await self.writer.research(topic)
-        except Exception as e:
-            console.print(f"[red]Research error: {e}[/red]")
-            research = ""
-
-        # 2. Write conversacional
-        await update.message.chat.send_action(action="typing")
-        status_msg = await update.message.reply_text("🎙️ ClaudIA está pensando...")
-
-        try:
-            content = await self.writer.write(topic, research, "conversacion")
-        except Exception as e:
-            console.print(f"[red]Write error: {e}[/red]")
-            await status_msg.edit_text(
-                "❌ Ocurrió un error generando la respuesta. Intenta de nuevo."
-            )
-            return
-
-        await status_msg.delete()
-
-        # Guardar sesión ligera
-        self._sessions[chat_id] = {
-            "title": topic,
-            "content": content,
-            "type": "conversacion",
-            "outline": "",
-            "research": research,
-            "voice_enabled": True,
-            "outline_pending": False,
-        }
-
-        # 3. Enviar texto corto
-        await update.message.reply_text(content)
-
-        # 4. Enviar voz
-        if self.voice:
-            await update.message.chat.send_action(action="upload_voice")
-            try:
-                voice_bytes = await self.voice.synthesize(content)
-                await update.message.reply_voice(
-                    voice=voice_bytes,
-                    caption="🎙️ ClaudIA",
-                )
-            except Exception as e:
-                console.print(f"[yellow]TTS falló: {e}[/yellow]")
-                await update.message.reply_text(
-                    "🎙️ No pude generar el audio, pero ahí va la respuesta en texto."
-                )
+        # Enviar voz adicional siempre que haya voz configurada (modo conversación por voz)
+        if self.voice and update.message:
+            chat_id = int(update.effective_chat.id)
+            session = self._sessions.get(chat_id, {})
+            content = session.get("content", "")
+            if content:
+                await update.message.chat.send_action(action="upload_voice")
+                try:
+                    voice_bytes = await self.voice.synthesize(content)
+                    await update.message.reply_voice(
+                        voice=voice_bytes,
+                        caption="🎙️ ClaudIA",
+                    )
+                except Exception as e:
+                    console.print(f"[yellow]TTS falló: {e}[/yellow]")
+                    await update.message.reply_text(
+                        "🎙️ No pude generar el audio, pero ahí va la respuesta en texto."
+                    )
 
     # ── Callbacks (descargas) ─────────────────────────────────
 

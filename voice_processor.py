@@ -32,29 +32,54 @@ class VoiceProcessor:
     async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
         """
         Transcribe audio a texto usando OpenAI Whisper-1.
-        Acepta OGG/Opus directamente (formato de Telegram voice messages).
+        Convierte a WAV mono 16kHz para máxima compatibilidad.
         """
         try:
             console.print("  [dim]🎙️ Whisper transcribiendo...[/dim]")
 
-            # Whisper soporta múltiples formatos incluyendo ogg
-            file_ext = "ogg"
-            if "mp3" in mime_type:
-                file_ext = "mp3"
-            elif "wav" in mime_type:
-                file_ext = "wav"
-            elif "m4a" in mime_type:
-                file_ext = "m4a"
+            # Normalizar a WAV para máxima compatibilidad con Whisper
+            wav_bytes = self._normalize_audio(audio_bytes, mime_type)
 
             response = await self._client.audio.transcriptions.create(
                 model="whisper-1",
-                file=(f"audio.{file_ext}", io.BytesIO(audio_bytes), mime_type),
+                file=("audio.wav", io.BytesIO(wav_bytes), "audio/wav"),
                 language="es",
             )
             return (response.text or "").strip()
         except Exception as e:
             console.print(f"[red]❌ Error STT Whisper: {e}[/red]")
             raise RuntimeError(f"Error en transcripción Whisper: {e}")
+
+    def _normalize_audio(self, audio_bytes: bytes, mime_type: str) -> bytes:
+        """Convierte audio a WAV mono 16kHz para Whisper."""
+        if not _PYDUB_AVAILABLE or not AudioSegment:
+            # Si no hay pydub, devolver original y cruzar dedos
+            return audio_bytes
+
+        try:
+            fmt = "ogg"
+            if "mp3" in mime_type:
+                fmt = "mp3"
+            elif "wav" in mime_type:
+                fmt = "wav"
+            elif "m4a" in mime_type:
+                fmt = "mp4"
+
+            seg = AudioSegment.from_file(io.BytesIO(audio_bytes), format=fmt)
+            seg = seg.set_frame_rate(16000).set_channels(1)
+            buf = io.BytesIO()
+            seg.export(buf, format="wav")
+            return buf.getvalue()
+        except Exception as e:
+            error_str = str(e).lower()
+            if "ffmpeg" in error_str or "avconv" in error_str:
+                raise RuntimeError(
+                    f"ffmpeg no está instalado. Se requiere para convertir audio. "
+                    f"Error original: {e}"
+                )
+            # Si falla la normalización, devolver original como fallback
+            console.print(f"[yellow]⚠️ Falló normalización de audio, usando original: {e}[/yellow]")
+            return audio_bytes
 
     async def synthesize(self, text: str) -> bytes:
         """

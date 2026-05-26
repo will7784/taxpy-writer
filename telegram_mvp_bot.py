@@ -517,13 +517,20 @@ class WriterTelegramBot:
         await update.message.chat.send_action(action="typing")
         status_msg = await update.message.reply_text("💬 Consultando a NotebookLM...")
 
+        content = ""
+        source = "notebooklm"
+
         try:
             # 1. Asegurar notebook
             nb_id = await self.writer.nb_manager.create_or_get_notebook()
 
             # 2. Guardar pregunta como nota en NotebookLM
-            note_title = f"Consulta {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-            await self.writer.nb_manager.save_note(nb_id, note_title, text)
+            try:
+                note_title = f"Consulta {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+                await self.writer.nb_manager.save_note(nb_id, note_title, text)
+            except Exception as e:
+                console.print(f"[yellow]⚠️ No se pudo guardar nota: {e}[/yellow]")
+                # Continuamos igual; la pregunta puede funcionar sin nota
 
             # 3. Preguntar directamente a NotebookLM
             result = await self.writer.nb_manager.ask_question(nb_id, text)
@@ -537,13 +544,23 @@ class WriterTelegramBot:
             content = self._clean_notebooklm_refs(answer)
 
         except Exception as e:
-            console.print(f"[red]Chat error: {e}[/red]")
+            console.print(f"[red]NotebookLM chat error: {e}[/red]")
             import traceback
             console.print(traceback.format_exc())
+
+            # Fallback: usar GPT-4o para no dejar al usuario sin respuesta
             await status_msg.edit_text(
-                "❌ Ocurrió un error consultando a NotebookLM. Intenta de nuevo."
+                "⚠️ NotebookLM no respondió. Generando respuesta con GPT-4o..."
             )
-            return
+            try:
+                content = await self.writer.write(text, "", "conversacion")
+                source = "gpt4o_fallback"
+            except Exception as e2:
+                console.print(f"[red]Fallback GPT-4o también falló: {e2}[/red]")
+                await status_msg.edit_text(
+                    "❌ Tanto NotebookLM como GPT-4o fallaron. Intenta de nuevo en unos segundos."
+                )
+                return
 
         await status_msg.delete()
 
@@ -558,10 +575,10 @@ class WriterTelegramBot:
             "outline_pending": False,
         }
 
-        # 5. Enviar texto
+        # Enviar texto
         await update.message.reply_text(content)
 
-        # 6. Voz si está activada (modo legacy /voz on)
+        # Voz si está activada (modo legacy /voz on)
         if self._sessions[chat_id].get("voice_enabled") and self.voice:
             await update.message.chat.send_action(action="upload_voice")
             try:

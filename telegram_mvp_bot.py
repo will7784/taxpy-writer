@@ -106,6 +106,7 @@ class WriterTelegramBot:
             "• /manual `<tema>` — manual completo con capítulos\n"
             "• /articulo `<tema>` — artículo editorial largo\n"
             "• /guion `<tema>` — guion de video con escenas y planos\n"
+            "• /historia `<tema>` — historia narrada como monólogo con sustento legal\n"
             "• /outline `<tema>` — índice detallado primero (tú apruebas)\n"
             "• /notebook — info del cuaderno conectado\n"
             "• /voz `on` / `off` — activa respuestas de voz\n\n"
@@ -262,6 +263,15 @@ class WriterTelegramBot:
             await update.message.reply_text("Usa: /guion `<tema a desarrollar>`")
             return
         await self._process_request(update, topic, "guion")
+
+    async def _historia(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        topic = " ".join(context.args or []).strip()
+        if not topic:
+            await update.message.reply_text("Usa: /historia `<tema a desarrollar>`")
+            return
+        await self._process_request(update, topic, "historia")
 
     async def _outline(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -584,6 +594,7 @@ class WriterTelegramBot:
         app.add_handler(CommandHandler("manual", self._manual))
         app.add_handler(CommandHandler("articulo", self._articulo))
         app.add_handler(CommandHandler("guion", self._guion))
+        app.add_handler(CommandHandler("historia", self._historia))
         app.add_handler(CommandHandler("outline", self._outline))
         app.add_handler(CommandHandler("voz", self._voz))
         app.add_handler(CallbackQueryHandler(self._handle_callback))

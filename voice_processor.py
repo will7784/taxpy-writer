@@ -32,23 +32,36 @@ class VoiceProcessor:
     async def transcribe(self, audio_bytes: bytes, mime_type: str = "audio/ogg") -> str:
         """
         Transcribe audio a texto usando OpenAI Whisper-1.
-        Convierte a WAV mono 16kHz para máxima compatibilidad.
+        Intenta primero con OGG original; si falla, convierte a WAV.
         """
+        console.print("  [dim]🎙️ Whisper transcribiendo...[/dim]")
+
+        # Intento 1: OGG original directo (formato nativo de Telegram)
         try:
-            console.print("  [dim]🎙️ Whisper transcribiendo...[/dim]")
+            response = await self._client.audio.transcriptions.create(
+                model="whisper-1",
+                file=("audio.ogg", io.BytesIO(audio_bytes), "audio/ogg"),
+                language="es",
+            )
+            result = (response.text or "").strip()
+            if result and len(result) > 5:
+                return result
+            console.print("[yellow]⚠️ Whisper devolvió texto vacío o muy corto con OGG. Intentando WAV...[/yellow]")
+        except Exception as e1:
+            console.print(f"[yellow]⚠️ Whisper con OGG falló: {e1}. Intentando WAV...[/yellow]")
 
-            # Normalizar a WAV para máxima compatibilidad con Whisper
+        # Intento 2: convertir a WAV mono 16kHz y reintentar
+        try:
             wav_bytes = self._normalize_audio(audio_bytes, mime_type)
-
             response = await self._client.audio.transcriptions.create(
                 model="whisper-1",
                 file=("audio.wav", io.BytesIO(wav_bytes), "audio/wav"),
                 language="es",
             )
             return (response.text or "").strip()
-        except Exception as e:
-            console.print(f"[red]❌ Error STT Whisper: {e}[/red]")
-            raise RuntimeError(f"Error en transcripción Whisper: {e}")
+        except Exception as e2:
+            console.print(f"[red]❌ Error STT Whisper: {e2}[/red]")
+            raise RuntimeError(f"Error en transcripción Whisper: {e2}")
 
     def _normalize_audio(self, audio_bytes: bytes, mime_type: str) -> bytes:
         """Convierte audio a WAV mono 16kHz para Whisper."""

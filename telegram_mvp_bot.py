@@ -110,7 +110,7 @@ class WriterTelegramBot:
             "• /outline `<tema>` — índice detallado primero (tú apruebas)\n"
             "• /notebook — info del cuaderno conectado\n"
             "• /voz `on` / `off` — activa respuestas de voz\n\n"
-            "También puedes escribirme directamente o mandarme un *audio* 🎙️"
+            "También puedes escribirme directamente o mandarme un *audio* para hablar con ClaudIA 🎙️"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -508,12 +508,73 @@ class WriterTelegramBot:
                 )
                 return
             await update.message.reply_text(f'🎙️ Entendí: "{transcript}"')
-            await self._handle_text(update, context, text_override=transcript)
+            await self._process_voice_chat(update, transcript)
         except Exception as e:
             console.print(f"[red]Voice handler error: {e}[/red]")
             await update.message.reply_text(
                 "Ocurrió un error procesando el audio. Intenta con texto."
             )
+
+    async def _process_voice_chat(
+        self,
+        update: Update,
+        transcript: str,
+    ) -> None:
+        """Procesa una conversación por voz: audio de entrada → ClaudIA responde con texto + audio."""
+        chat_id = int(update.effective_chat.id)
+        topic = transcript
+
+        # 1. Research
+        await update.message.chat.send_action(action="typing")
+        try:
+            research = await self.writer.research(topic)
+        except Exception as e:
+            console.print(f"[red]Research error: {e}[/red]")
+            research = ""
+
+        # 2. Write conversacional
+        await update.message.chat.send_action(action="typing")
+        status_msg = await update.message.reply_text("🎙️ ClaudIA está pensando...")
+
+        try:
+            content = await self.writer.write(topic, research, "conversacion")
+        except Exception as e:
+            console.print(f"[red]Write error: {e}[/red]")
+            await status_msg.edit_text(
+                "❌ Ocurrió un error generando la respuesta. Intenta de nuevo."
+            )
+            return
+
+        await status_msg.delete()
+
+        # Guardar sesión ligera
+        self._sessions[chat_id] = {
+            "title": topic,
+            "content": content,
+            "type": "conversacion",
+            "outline": "",
+            "research": research,
+            "voice_enabled": True,
+            "outline_pending": False,
+        }
+
+        # 3. Enviar texto corto
+        await update.message.reply_text(content)
+
+        # 4. Enviar voz
+        if self.voice:
+            await update.message.chat.send_action(action="upload_voice")
+            try:
+                voice_bytes = await self.voice.synthesize(content[:1200])
+                await update.message.reply_voice(
+                    voice=voice_bytes,
+                    caption="🎙️ ClaudIA",
+                )
+            except Exception as e:
+                console.print(f"[yellow]TTS falló: {e}[/yellow]")
+                await update.message.reply_text(
+                    "🎙️ No pude generar el audio, pero ahí va la respuesta en texto."
+                )
 
     # ── Callbacks (descargas) ─────────────────────────────────
 
@@ -525,6 +586,9 @@ class WriterTelegramBot:
         content_type: str,
     ) -> None:
         """Envía .md y .docx como documentos adjuntos automáticamente."""
+        if content_type == "conversacion":
+            return
+
         try:
             md_data = exporter.to_markdown(content, title)
             md_filename = f"{_sanitize_filename(title)}.md"

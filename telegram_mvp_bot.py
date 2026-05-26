@@ -87,7 +87,7 @@ class WriterTelegramBot:
     def __init__(self, token: str) -> None:
         self.token = token
         self.writer = WriterEngine()
-        self.voice = VoiceProcessor() if config.GOOGLE_API_KEY else None
+        self.voice = VoiceProcessor() if config.OPENAI_API_KEY else None
         self._store = SessionStore(config.TELEGRAM_DB_PATH)
         # Sesiones en memoria: chat_id -> dict
         self._sessions: dict[int, dict] = {}
@@ -494,7 +494,7 @@ class WriterTelegramBot:
         if not self.voice:
             await update.message.reply_text(
                 "🎙️ El procesamiento de voz no está configurado.\n\n"
-                "Agrega la variable `GOOGLE_API_KEY` en Railway para activarlo."
+                "Asegúrate de tener `OPENAI_API_KEY` configurada en Railway."
             )
             return
 
@@ -520,10 +520,10 @@ class WriterTelegramBot:
                     "No se encontró `ffmpeg` en el servidor. "
                     "Si eres admin, revisa que esté instalado en el Dockerfile."
                 )
-            elif "gemini" in error_msg or "client" in error_msg or "api key" in error_msg:
+            elif "openai" in error_msg or "api key" in error_msg or "authentication" in error_msg:
                 await update.message.reply_text(
-                    "🎙️ Error con la API de voz (Gemini).\n"
-                    "Revisa que la `GOOGLE_API_KEY` sea válida y tenga permisos."
+                    "🎙️ Error con la API de voz (OpenAI).\n"
+                    "Revisa que la `OPENAI_API_KEY` sea válida y tenga saldo disponible."
                 )
             else:
                 await update.message.reply_text(

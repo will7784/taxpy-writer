@@ -7,17 +7,19 @@ echo "=== Taxpy Writer Bot startup ==="
 mkdir -p /root/.notebooklm/profiles/default
 
 STORAGE_FILE="/root/.notebooklm/profiles/default/storage_state.json"
+AUTH_FILE="/app/notebooklm_auth.json"
 
-# Prioridad 1: variable de entorno NOTEBOOKLM_AUTH_JSON (permite actualizar desde Railway sin commit)
-if [ -n "$NOTEBOOKLM_AUTH_JSON" ]; then
+# Prioridad 1: archivo local notebooklm_auth.json (actualizado via dashboard web)
+if [ -f "$AUTH_FILE" ]; then
+    cp "$AUTH_FILE" "$STORAGE_FILE"
+    echo "✅ Credenciales NotebookLM sincronizadas desde archivo local (dashboard)"
+# Prioridad 2: variable de entorno NOTEBOOKLM_AUTH_JSON (fallback para deploys limpios)
+elif [ -n "$NOTEBOOKLM_AUTH_JSON" ]; then
     echo "$NOTEBOOKLM_AUTH_JSON" > "$STORAGE_FILE"
     echo "✅ Credenciales NotebookLM sincronizadas desde variable de entorno"
-# Prioridad 2: archivo local notebooklm_auth.json (fallback)
-elif [ -f /app/notebooklm_auth.json ]; then
-    cp /app/notebooklm_auth.json "$STORAGE_FILE"
-    echo "✅ Credenciales NotebookLM sincronizadas desde archivo local"
 else
-    echo "⚠️ No hay credenciales de NotebookLM configuradas. Agrega NOTEBOOKLM_AUTH_JSON en Railway o sube notebooklm_auth.json"
+    echo "⚠️ No hay credenciales de NotebookLM configuradas."
+    echo "   Sube un archivo desde el dashboard o agrega NOTEBOOKLM_AUTH_JSON en Railway."
 fi
 
 exec python main.py

@@ -29,7 +29,7 @@ import exporter
 from rag_engine import rag as rag_engine
 from settings_store import store as settings_store
 from voice_processor import VoiceProcessor
-from writer import WriterEngine
+from writer import WriterEngine, _load_agent_md
 
 console = Console()
 
@@ -451,6 +451,9 @@ class WriterTelegramBot:
 
                 await status_msg.edit_text("💬 Analizando fuentes legales...")
 
+                # Cargar instrucciones unificadas del agente (agent.md)
+                agent_md = _load_agent_md()
+
                 system = (
                     "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL, "
                     "como si estuvieras hablando por teléfono con un colega.\n\n"
@@ -459,7 +462,10 @@ class WriterTelegramBot:
                     "aparezcan en las fuentes. Si la información no está en las fuentes, dí que no lo tienes. "
                     "Cita SIEMPRE la norma exacta (artículo, ley, decreto, oficio o circular) entre paréntesis.\n\n"
                     "NUNCA uses markdown, títulos, bullets ni numeración. "
-                    "Máximo 250 palabras. Termina con una pregunta breve."
+                    "Máximo 250 palabras. Termina con una pregunta breve.\n\n"
+                    "--- PERFIL Y CONOCIMIENTOS DEL AGENTE (contexto de fondo, no formato) ---\n"
+                    f"{agent_md}\n"
+                    "--- FIN DEL PERFIL ---"
                 )
 
                 user_prompt = (

@@ -96,13 +96,15 @@ class RAGEngine:
     # Cada clave: palabra(s) que el usuario puede usar.  Valor: lista de términos legales
     # equivalentes que aparecen en los documentos.
     _SYNONYMS: dict[str, list[str]] = {
+        # PYME = forma correcta.  PIME / PROPIME = pronunciación/escritura errónea común en audio.
+        # El retrieval debe buscar PYME cuando el usuario dice PIME.
         "pro": ["pro"],
         "propyme": ["pro", "propyme", "propime"],
-        "pime": ["pime", "propyme", "propime", "pro"],
-        "pyme": ["pyme", "propyme", "propime", "pro"],
-        "propime": ["propyme", "propime", "pro"],
-        "propia": ["propyme", "propime", "pro"],
-        "propie": ["propyme", "propime", "pro"],
+        "pime": ["propyme", "pyme", "pro"],
+        "pyme": ["pyme", "propyme", "pro"],
+        "propime": ["propyme", "pyme", "pro"],
+        "propia": ["propyme", "pyme", "pro"],
+        "propie": ["propyme", "pyme", "pro"],
         "renta": ["renta", "imponible"],
         "rentas": ["renta", "imponible"],
         "imponible": ["imponible", "renta"],

@@ -27,15 +27,196 @@ class RAGEngine:
     1. Recibe una pregunta del usuario
     2. Genera embedding de la pregunta
     3. Busca los chunks más similares en Supabase pgvector
-    4. Opcionalmente re-rankea con GPT-4o-mini
+    4. Fallback por keywords en leyes (caché local) para capturar conceptos
+       legales específicos que el embedding semántico puede perder por
+       diferencia de estilo (normativo vs. conversacional).
     5. Retorna contexto estructurado para el LLM
     """
 
     DEFAULT_TOP_K = 10
-    CONVERSATION_TOP_K = 5
+    CONVERSATION_TOP_K = 8  # Aumentado: chunks de leyes ahora son más pequeños y precisos
+
+    # Palabras vacías en español + conversacionales que no aportan a búsqueda legal
+    _STOPWORDS: set[str] = {
+        "qué", "cómo", "cuál", "dónde", "cuándo", "por", "para", "con", "sin", "sobre",
+        "bajo", "entre", "desde", "hasta", "después", "antes", "durante", "mediante",
+        "según", "como", "más", "menos", "muy", "tan", "tanto", "cada", "todo", "toda",
+        "todos", "todas", "algún", "alguna", "algunos", "algunas", "ningún", "ninguna",
+        "otro", "otra", "otros", "otras", "mismo", "misma", "mismos", "mismas", "tal",
+        "tales", "cual", "cuales", "que", "el", "la", "los", "las", "un", "una", "unos",
+        "unas", "del", "al", "de", "a", "en", "es", "son", "fue", "ser", "estar", "tener",
+        "haber", "hacer", "poder", "deber", "querer", "saber", "decir", "ver", "dar", "ir",
+        "venir", "poner", "salir", "pasar", "pensar", "seguir", "volver", "parecer", "quedar",
+        "llamar", "llegar", "creer", "dejar", "mirar", "escuchar", "tomar", "trabajar", "usar",
+        "empezar", "terminar", "ayudar", "mostrar", "importar", "explicar", "concepto", "sobre",
+        "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas", "aquel", "aquella",
+        "aquellos", "aquellas", "yo", "tú", "él", "ella", "nosotros", "nosotras", "vosotros",
+        "vosotras", "ellos", "ellas", "me", "te", "se", "nos", "os", "lo", "le", "les",
+        "mi", "tu", "su", "nuestro", "vuestra", "suyo", "mío", "tuyo", "cuando", "donde",
+        "quien", "cuyo", "cuya", "cuyos", "cuyas", "cuanto", "cuanta", "cuantos", "cuantas",
+        "asi", "tambien", "pero", "sino", "aunque", "porque", "pues", "ya", "aun", "solo",
+        "solamente", "bien", "mal", "ahora", "entonces", "luego", "siempre", "nunca",
+        "jamás", "quizás", "talvez", "acaso", "verdaderamente", "realmente", "ciertamente",
+        "efectivamente", "exactamente", "precisamente", "particularmente", "especialmente",
+        "generalmente", "normalmente", "frecuentemente", "constantemente", "continuamente",
+        "inmediatamente", "directamente", "indirectamente", "claramente", "evidentemente",
+        "obviamente", "aparentemente", "supuestamente", "presumiblemente", "probablemente",
+        "posiblemente", "quizá", "vez", "sea", "sean", "fuese", "hubiese", "tuviese",
+        "pudiese", "debiese", "diga", "haga", "vaya", "esté", "estén", "and", "the", "or",
+        "what", "how", "when", "where", "why", "which", "who", "whom", "whose", "this",
+        "that", "these", "those", "is", "are", "was", "were", "be", "been", "being",
+        "have", "has", "had", "do", "does", "did", "will", "would", "shall", "should",
+        "may", "might", "can", "could", "must", "ought", "need", "dare", "used", "to",
+        "of", "for", "with", "at", "by", "from", "as", "into", "through", "during",
+        "before", "after", "above", "below", "up", "down", "out", "off", "over", "under",
+        "again", "further", "then", "once", "here", "there", "all", "any", "both", "each",
+        "few", "more", "most", "other", "some", "such", "no", "nor", "not", "only", "own",
+        "same", "so", "than", "too", "very", "just", "but", "if", "while", "because",
+        "until", "since", "although", "unless", "whether", "either", "neither", "also",
+        "really", "actually", "definitely", "certainly", "probably", "possibly", "perhaps",
+        "maybe", "simply", "basically", "essentially", "fundamentally", "primarily",
+        "mainly", "mostly", "largely", "partly", "fully", "completely", "totally",
+        "absolutely", "relatively", "fairly", "quite", "rather", "pretty", "enough",
+        "almost", "nearly", "hardly", "barely", "scarcely", "seldom", "rarely",
+        "frequently", "often", "sometimes", "usually", "typically", "commonly",
+        "regularly", "repeatedly", "consistently", "occasionally", "periodically",
+        "temporarily", "permanently", "explícame", "explique", "dime", "cuéntame",
+        "cuentame", "indícame", "indicame", "explíqueme", "diga", "dígame", "háblame",
+        "hablame", "muéstrame", "muestrame", "enséñame", "enseñame", "explicame",
+        "quiero", "quisiera", "necesito", "gustaría", "gustaria", "podrías", "podrias",
+        "podría", "podria", "puedes", "puede", "pueden", "puedo", "pueda", "pudiera",
+        "podrían", "podrian", "sería", "seria", "serian", "serían", "estaría", "estaria",
+        "estuviera", "estuviese", "hubiera", "hubiese", "tuviera", "tuviese", "tendría",
+        "tendria", "tendrían", "tendrian", "haría", "haria", "harían", "harian", "diría",
+        "diria", "dirían", "dirian", "vería", "veria", "verían", "verian", "sabría",
+        "sabria", "sabrían", "sabrian", "dónde", "cuál", "cuáles", "quién", "quiénes",
+    }
 
     def __init__(self) -> None:
         self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        self._law_cache: list[DocumentChunk] | None = None
+        self._law_cache_loaded = False
+
+    def _load_law_cache(self) -> None:
+        """Carga todos los chunks de leyes en memoria para búsqueda keyword instantánea."""
+        if self._law_cache_loaded:
+            return
+        try:
+            response = supabase.table("document_chunks").select("*").eq("source_type", "ley").execute()
+            self._law_cache = [DocumentChunk.from_db_row(r) for r in response.data]
+            console.print(f"[dim]📚 Caché de leyes cargada: {len(self._law_cache)} chunks[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]⚠️ No se pudo cargar caché de leyes: {e}[/yellow]")
+            self._law_cache = []
+        self._law_cache_loaded = True
+
+    @staticmethod
+    def _extract_article_numbers(query: str) -> list[str]:
+        """Extrae números de artículo de la query (ej: 'artículo 21' → ['21'])."""
+        pattern = re.compile(r"art[íi]culo\s+(\d+[°\w]*)", re.IGNORECASE)
+        return [m.group(1).lower().replace("°", "").replace("º", "") for m in pattern.finditer(query)]
+
+    def _keyword_search_local(self, query: str, top_k: int = 10) -> list[SearchResult]:
+        """Búsqueda por palabras clave en caché local de leyes (fallback semántico).
+
+        Ranking:
+        - Prioriza chunks donde la keyword aparece en el header del artículo.
+        - Prioriza chunks con mayor densidad de keywords (más menciones / menos texto).
+        - Detecta números de artículo explícitos en la query y da bonus masivo.
+        - Asigna una pseudo-similitud competitiva para que compita con resultados
+          vectoriales de jurisprudencia que a menudo no son relevantes.
+        """
+        self._load_law_cache()
+        if not self._law_cache:
+            return []
+
+        keywords = [w.lower() for w in re.findall(r"\b\w+\b", query) if len(w) > 3 and w.lower() not in self._STOPWORDS]
+        if not keywords:
+            return []
+
+        # Extraer números de artículo de la query para bonus específico
+        article_nums = self._extract_article_numbers(query)
+
+        scored: list[tuple[float, SearchResult]] = []
+        for chunk in self._law_cache:
+            content_lower = chunk.content.lower()
+            header_lower = (chunk.section_level_name or "").lower()
+            uid_lower = chunk.chunk_uid.lower()
+
+            keyword_count = 0
+            header_hits = 0
+            first_positions: list[int] = []
+            for kw in keywords:
+                occurrences = content_lower.count(kw)
+                keyword_count += occurrences
+                if kw in header_lower:
+                    header_hits += 1
+                pos = content_lower.find(kw)
+                if pos >= 0:
+                    first_positions.append(pos)
+
+            if keyword_count == 0:
+                continue
+
+            # Densidad: menciones por cada 1000 caracteres
+            density = keyword_count / max(1, len(chunk.content)) * 1000
+            # Bonus por keyword en header (muy relevante)
+            header_bonus = header_hits * 0.08
+            # Bonus por posición temprana en el texto (definiciones suelen estar al inicio)
+            position_bonus = 0.0
+            if first_positions:
+                min_pos = min(first_positions)
+                if min_pos < 200:
+                    position_bonus = 0.06
+                elif min_pos < 500:
+                    position_bonus = 0.03
+            # Penalización por chunks muy cortos (notas/modificaciones aisladas)
+            content_len = len(chunk.content)
+            length_penalty = 0.0
+            if content_len < 300:
+                length_penalty = -0.14
+            elif content_len < 500:
+                length_penalty = -0.07
+
+            # Bonus masivo si el número de artículo de la query coincide con el chunk
+            article_bonus = 0.0
+            for num in article_nums:
+                if num in uid_lower or num in header_lower:
+                    article_bonus = 0.20
+                    break
+
+            # Bonus por law_tag detectado en la query (prioriza la ley correcta)
+            law_tag_bonus = 0.0
+            query_lower = query.lower()
+            if chunk.law_tag == "lir" and any(k in query_lower for k in ("lir", "renta", "dl-824", "dl 824")):
+                law_tag_bonus = 0.04
+            elif chunk.law_tag == "iva" and any(k in query_lower for k in ("iva", "dl-825", "dl 825")):
+                law_tag_bonus = 0.04
+            elif chunk.law_tag == "codigo_tributario" and any(k in query_lower for k in ("código tributario", "codigo tributario", "dl-830", "dl 830")):
+                law_tag_bonus = 0.04
+
+            # Base + densidad escalada + bonuses + penalizaciones, con tope
+            sim = min(0.58, 0.30 + density * 0.10 + header_bonus + position_bonus + length_penalty + article_bonus + law_tag_bonus)
+            has_article_match = article_bonus > 0
+
+            scored.append((sim, has_article_match, SearchResult(chunk=chunk, similarity=sim)))
+
+        # Detectar law_tag preferido de la query para desempate
+        query_lower = query.lower()
+        preferred_law_tag: str | None = None
+        if any(k in query_lower for k in ("lir", "renta", "dl-824", "dl 824")):
+            preferred_law_tag = "lir"
+        elif any(k in query_lower for k in ("iva", "dl-825", "dl 825")):
+            preferred_law_tag = "iva"
+        elif any(k in query_lower for k in ("código tributario", "codigo tributario", "dl-830", "dl 830")):
+            preferred_law_tag = "codigo_tributario"
+
+        # Ordenar por: similitud > artículo coincide > law_tag preferido
+        scored.sort(
+            key=lambda x: (x[0], x[1], x[2].chunk.law_tag == preferred_law_tag),
+            reverse=True,
+        )
+        return [r for _, _, r in scored[:top_k]]
 
     async def search(
         self,
@@ -95,13 +276,30 @@ class RAGEngine:
 
         # 3. Deduplicar por chunk_uid y ordenar por similarity
         seen: set[str] = set()
-        unique_results: list[SearchResult] = []
+        vector_results: list[SearchResult] = []
         for r in sorted(all_results, key=lambda x: x.similarity, reverse=True):
             if r.chunk.chunk_uid not in seen:
                 seen.add(r.chunk.chunk_uid)
-                unique_results.append(r)
+                vector_results.append(r)
 
-        return unique_results[:top_k]
+        vector_results = vector_results[:top_k]
+
+        # 4. Búsqueda híbrida: siempre fusionar keywords de leyes con vectorial.
+        # Esto corrige el "style mismatch" donde embeddings conversacionales no
+        # alinean con texto normativo denso de leyes chilenas.
+        wants_laws = source_types is None or "ley" in source_types
+        if wants_laws:
+            keyword_results = self._keyword_search_local(query, top_k=8)
+            for kr in keyword_results:
+                uid = kr.chunk.chunk_uid
+                if uid not in seen:
+                    seen.add(uid)
+                    vector_results.append(kr)
+                # Si el chunk ya estaba en vectorial, no bajamos su similitud
+            # Reordenar por similitud descendente
+            vector_results.sort(key=lambda x: x.similarity, reverse=True)
+
+        return vector_results[:top_k]
 
     async def search_for_conversation(
         self,

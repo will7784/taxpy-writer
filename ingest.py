@@ -44,9 +44,9 @@ LAW_TAG_FROM_FILENAME = {
 
 
 # Límite de tokens de OpenAI para embeddings: 8192
-# En español: ~1 token = ~1.3-1.5 caracteres (promedio)
-# Usamos un límite conservador de 6000 caracteres ≈ ~4000-4500 tokens
-MAX_EMBEDDING_CHARS = 6000
+# En español legal: ~1 token = ~1.2-1.4 caracteres (promedio, palabras más largas)
+# 10000 caracteres ≈ ~7000-8300 tokens, dentro del límite seguro de 8192
+MAX_EMBEDDING_CHARS = 10000
 
 
 def _truncate_for_embedding(text: str, max_chars: int = MAX_EMBEDDING_CHARS) -> str:
@@ -240,7 +240,56 @@ class CircularMDParser:
 
 
 class PDFLawParser:
-    """Parsea PDFs de leyes chilenas y los chunkéa por artículo."""
+    """Parsea PDFs de leyes chilenas y los chunkéa por artículo/modificación."""
+
+    # Regex estricto: solo detecta inicios de artículo/modificación.
+    # NO detecta referencias internas tipo "artículo 58 número 3)" en medio de oración.
+    ARTICLE_START_RE = re.compile(
+        r"""
+        ^\s*
+        (?:
+            ART[ÍI]CULO\s+\d+[°\w]*\s*[\.\-]
+          | Art[íi]culo\s+\d+[°\w]*\s*[\.\-]
+          | Art\.\s+(?:\d+[°\w]*|segundo|único|primero|tercero|cuarto|quinto|sexto|séptimo|octavo|noveno|décimo)\b
+        )
+        """,
+        re.VERBOSE | re.MULTILINE,
+    )
+
+    # Líneas boilerplate de leychile.cl que no aportan valor semántico
+    _BOILERPLATE_RE = re.compile(
+        r"Biblioteca del Congreso Nacional de Chile - www\.leychile\.cl - documento generado el .*?\n",
+        re.IGNORECASE,
+    )
+    _DECRETO_HEADER_RE = re.compile(
+        r"^Decreto Ley \d+, HACIENDA \(\d{4}\)\s*$",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    _PAGE_NUM_RE = re.compile(
+        r"página \d+ de \d+\s*\n",
+        re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _clean_law_text(text: str) -> str:
+        """Limpia headers y metadata repetitiva de leychile.cl."""
+        text = PDFLawParser._BOILERPLATE_RE.sub("", text)
+        text = PDFLawParser._DECRETO_HEADER_RE.sub("", text)
+        text = PDFLawParser._PAGE_NUM_RE.sub("", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        return text.strip()
+
+    @staticmethod
+    def _extract_article_id(header: str) -> str:
+        """Extrae el identificador base del artículo para el UID."""
+        header = header.strip()
+        m = re.search(r"(?:ART[ÍI]CULO|Art[íi]culo|Art\.)\s+(\S+)", header)
+        if not m:
+            return "unknown"
+        num = m.group(1)
+        # Limpiar sufijos de puntuación (°, º, ., -)
+        num = re.sub(r"[°º\.\-]+$", "", num)
+        return num.lower()
 
     @staticmethod
     def parse(filepath: Path) -> list[DocumentChunk]:
@@ -264,16 +313,13 @@ class PDFLawParser:
             console.print(f"[yellow]⚠️ PDF vacío o no legible: {filepath}[/yellow]")
             return chunks
 
-        # Dividir por artículos usando regex común en leyes chilenas
-        # Patrones: "Artículo 1.", "ARTÍCULO 1.", "Art. 1.", etc.
-        article_pattern = re.compile(
-            r"(?:^|\n)\s*(?:ART[ÍI]CULO|Art[íi]culo|Art\.?)\s*(\d+[\w\s]*?)\.?\s*(?=\n)",
-            re.IGNORECASE,
-        )
+        # Limpiar texto de boilerplate
+        full_text = PDFLawParser._clean_law_text(full_text)
 
-        splits = list(article_pattern.finditer(full_text))
-        if len(splits) < 2:
-            # Si no detecta artículos, guardar todo como un solo chunk
+        # Detectar inicios de artículo/modificación
+        matches = list(PDFLawParser.ARTICLE_START_RE.finditer(full_text))
+        if len(matches) < 2:
+            # Fallback: guardar todo como un solo chunk
             content_hash = hashlib.sha256(full_text.encode()).hexdigest()
             chunks.append(DocumentChunk(
                 chunk_uid=f"ley_{law_tag}_full",
@@ -282,22 +328,32 @@ class PDFLawParser:
                 source_type="ley",
                 law_tag=law_tag,
                 hierarchy_path=law_tag,
-                content=full_text[:8000],  # Limitar tamaño
+                content=full_text[:MAX_EMBEDDING_CHARS],
                 content_hash=content_hash,
                 metadata={"tipo": "ley_completa", "filename": filepath.name},
             ))
             return chunks
 
-        for i, match in enumerate(splits):
-            start = match.start()
-            end = splits[i + 1].start() if i + 1 < len(splits) else len(full_text)
-            article_text = full_text[start:end].strip()
-            article_num = match.group(1).strip().replace(" ", "_")
+        occurrence_counter: dict[str, int] = {}
 
-            if len(article_text) < 20:
+        for i, match in enumerate(matches):
+            start = match.start()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
+            article_text = full_text[start:end].strip()
+
+            if len(article_text) < 15:
                 continue
 
-            chunk_uid = f"ley_{law_tag}_art_{article_num}"
+            header = match.group().strip()
+            article_num = PDFLawParser._extract_article_id(header)
+
+            # UID único: si hay múltiples ocurrencias del mismo artículo,
+            # agregamos un índice (modificaciones posteriores)
+            base_uid = f"ley_{law_tag}_art_{article_num}"
+            occ = occurrence_counter.get(base_uid, 0)
+            occurrence_counter[base_uid] = occ + 1
+            chunk_uid = f"{base_uid}_{occ}" if occ > 0 else base_uid
+
             content_hash = hashlib.sha256(article_text.encode()).hexdigest()
 
             chunks.append(DocumentChunk(
@@ -307,16 +363,17 @@ class PDFLawParser:
                 source_type="ley",
                 law_tag=law_tag,
                 hierarchy_path=f"{law_tag}/art_{article_num}",
-                section_level_name=f"Artículo {article_num}",
+                section_level_name=header,
                 content=article_text,
                 content_hash=content_hash,
                 metadata={
                     "tipo": "ley",
                     "articulo": article_num,
+                    "articulo_header": header,
                     "filename": filepath.name,
                 },
                 chunk_index=i,
-                total_chunks=len(splits),
+                total_chunks=len(matches),
             ))
 
         return chunks

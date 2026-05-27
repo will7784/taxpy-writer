@@ -1,5 +1,8 @@
 """
-Cliente Singleton para Supabase.
+Cliente para Supabase.
+
+Usa el cliente síncrono de supabase-py envuelto en run_in_executor
+para compatibilidad con async/await del bot.
 """
 
 from __future__ import annotations
@@ -13,10 +16,9 @@ import config
 
 
 class SupabaseClient:
-    """Singleton thread-safe de cliente Supabase."""
+    """Cliente Supabase con soporte async via thread pool."""
 
     _instance: SupabaseClient | None = None
-    _lock = asyncio.Lock()
 
     def __new__(cls) -> SupabaseClient:
         if cls._instance is None:
@@ -24,36 +26,29 @@ class SupabaseClient:
             cls._instance._client: Client | None = None
         return cls._instance
 
-    async def _ensure_client(self) -> Client:
+    def _ensure_client(self) -> Client:
         if self._client is not None:
             return self._client
 
         if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_KEY:
             raise RuntimeError(
-                "SUPABASE_URL y SUPABASE_SERVICE_KEY deben estar configurados en el entorno"
+                "SUPABASE_URL y SUPABASE_SERVICE_KEY deben estar configurados"
             )
 
-        # create_client es síncrono pero puede hacer I/O; lo envolvemos en thread
-        loop = asyncio.get_event_loop()
-        self._client = await loop.run_in_executor(
-            None,
-            lambda: create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY),
-        )
+        self._client = create_client(config.SUPABASE_URL, config.SUPABASE_SERVICE_KEY)
         return self._client
 
     @property
-    async def client(self) -> Client:
-        return await self._ensure_client()
+    def client(self) -> Client:
+        return self._ensure_client()
 
-    async def table(self, name: str) -> Any:
+    def table(self, name: str) -> Any:
         """Acceso directo a una tabla."""
-        client = await self._ensure_client()
-        return client.table(name)
+        return self._ensure_client().table(name)
 
-    async def rpc(self, fn: str, params: dict[str, Any] | None = None) -> Any:
+    def rpc(self, fn: str, params: dict[str, Any] | None = None) -> Any:
         """Ejecuta una función RPC."""
-        client = await self._ensure_client()
-        return client.rpc(fn, params or {})
+        return self._ensure_client().rpc(fn, params or {})
 
 
 # Instancia global

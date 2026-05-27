@@ -463,8 +463,7 @@ class IngestionPipeline:
 
             # Insertar en Supabase
             try:
-                tbl = await supabase.table("document_chunks")
-                result = tbl.upsert(deduplicated_records, on_conflict="chunk_uid").execute()
+                result = supabase.table("document_chunks").upsert(deduplicated_records, on_conflict="chunk_uid").execute()
                 console.print(f"[green]  ✓ Batch {i//self.EMBEDDING_BATCH_SIZE + 1}: {len(deduplicated_records)} chunks[/green]")
             except Exception as e:
                 console.print(f"[red]  ✗ Error en batch {i//self.EMBEDDING_BATCH_SIZE + 1}: {e}[/red]")
@@ -480,8 +479,7 @@ class IngestionPipeline:
         for i in range(0, len(hashes), 100):
             batch_hashes = hashes[i : i + 100]
             try:
-                tbl = await supabase.table("document_chunks")
-                result = tbl.select("content_hash").in_("content_hash", batch_hashes).execute()
+                result = supabase.table("document_chunks").select("content_hash").in_("content_hash", batch_hashes).execute()
                 if result.data:
                     existing.update(r["content_hash"] for r in result.data)
             except Exception as e:

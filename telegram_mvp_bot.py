@@ -120,22 +120,22 @@ class WriterTelegramBot:
         """Muestra información de la base de conocimiento RAG."""
         await update.message.chat.send_action(action="typing")
 
-        lines = ["📚 *Base de Conocimiento Taxpy*", ""]
+        lines = ["📚 *Base de Conocimiento ImpuestIA*", ""]
 
         # Contar chunks por tipo
         try:
             from supabase_client import supabase
-            tbl = await supabase.table("document_chunks")
+            tbl = supabase.table("document_chunks")
 
             # Total de chunks
-            result = await tbl.select("*", count="exact").limit(0).execute()
+            result = tbl.select("*", count="exact").limit(0).execute()
             total = result.count or 0
             lines.append(f"📄 *Documentos indexados:* {total} chunks")
 
             # Por tipo
             for source_type in ["ley", "circular", "jurisprudencia_judicial", "oficio", "resolucion"]:
                 try:
-                    r = await tbl.select("*", count="exact").eq("source_type", source_type).limit(0).execute()
+                    r = tbl.select("*", count="exact").eq("source_type", source_type).limit(0).execute()
                     count = r.count or 0
                     if count > 0:
                         emoji = {"ley": "⚖️", "circular": "📋", "jurisprudencia_judicial": "🏛️",

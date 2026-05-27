@@ -83,8 +83,7 @@ class RAGEngine:
                 }
 
                 try:
-                    rpc = await supabase.rpc("match_document_chunks", params)
-                    response = rpc.execute()
+                    response = supabase.rpc("match_document_chunks", params).execute()
 
                     if response.data:
                         for row in response.data:

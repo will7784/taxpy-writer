@@ -475,8 +475,7 @@ class WriterTelegramBot:
                     "Si la respuesta no está en las fuentes, dí honestamente que no tienes esa información."
                 )
 
-                response = await self.writer._openai.chat.completions.create(
-                    model=config.OPENAI_MODEL,
+                content = await self.writer._llm.chat_completion(
                     messages=[
                         {"role": "system", "content": system},
                         {"role": "user", "content": user_prompt},
@@ -484,7 +483,7 @@ class WriterTelegramBot:
                     temperature=0.7,
                     max_tokens=800,
                 )
-                content = (response.choices[0].message.content or "").strip()
+                content = content.strip()
 
         except Exception as e:
             console.print(f"[red]RAG chat error: {e}[/red]")

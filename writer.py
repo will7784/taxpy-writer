@@ -13,7 +13,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from openai import AsyncOpenAI
+from llm_client import LLMClient
 from rich.console import Console
 
 import config
@@ -140,7 +140,7 @@ class WriterEngine:
         self._nb_manager: NotebookLMManager | None = None
         self._nb_id: str | None = None
 
-        self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        self._llm = LLMClient()
         self._agent_md = _load_agent_md()
 
     def _get_nb_manager(self) -> NotebookLMManager | None:
@@ -248,8 +248,7 @@ class WriterEngine:
             "Cada ítem debe tener: título + 1 línea de descripción."
         )
 
-        response = await self._openai.chat.completions.create(
-            model=config.OPENAI_MODEL,
+        content = await self._llm.chat_completion(
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_prompt},
@@ -257,7 +256,7 @@ class WriterEngine:
             temperature=0.3,
             max_tokens=2000,
         )
-        return (response.choices[0].message.content or "").strip()
+        return content.strip()
 
     async def write(
         self,
@@ -289,9 +288,9 @@ class WriterEngine:
             "Recuerda: cada subcapítulo debe tener definición, base legal, desarrollo profundo, ejemplo práctico extenso y tip."
         )
 
-        console.print(f"  [dim]✍️ GPT-4o redactando ({content_type})...[/dim]")
-        response = await self._openai.chat.completions.create(
-            model=config.OPENAI_MODEL,
+        provider_label = self._llm.provider.upper()
+        console.print(f"  [dim]✍️ {provider_label} redactando ({content_type})...[/dim]")
+        content = await self._llm.chat_completion(
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user_prompt},
@@ -299,7 +298,7 @@ class WriterEngine:
             temperature=config.WRITER_TEMPERATURE,
             max_tokens=config.WRITER_MAX_TOKENS,
         )
-        return (response.choices[0].message.content or "").strip()
+        return content.strip()
 
     async def _research_legacy(self, topic: str) -> str:
         """Fallback: investiga en NotebookLM (deprecated)."""

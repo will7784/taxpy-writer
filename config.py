@@ -23,6 +23,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
+# Google Gemini (alternativa de mayor contexto para cruce de leyes)
+# =================================================================
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
 # ============================================
 # Supabase (RAG vector database)
 # ============================================

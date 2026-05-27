@@ -135,23 +135,30 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
 
 class WriterEngine:
     def __init__(self, notebook_name: str | None = None) -> None:
-        # NotebookLM legacy (deprecated, se eliminará en Fase 5)
-        name = notebook_name or settings_store.get("primary_notebook_name") or config.NOTEBOOKLM_NOTEBOOK_NAME
-        self.nb_manager = NotebookLMManager(notebook_name=name)
+        # NotebookLM legacy (lazy init, se eliminará en Fase 5)
+        self._notebook_name = notebook_name or settings_store.get("primary_notebook_name") or config.NOTEBOOKLM_NOTEBOOK_NAME
+        self._nb_manager: NotebookLMManager | None = None
         self._nb_id: str | None = None
 
         self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         self._agent_md = _load_agent_md()
 
-    async def _ensure_notebook(self) -> str:
-        if self._nb_id is None:
-            self._nb_id = await self.nb_manager.create_or_get_notebook()
-        return self._nb_id
+    def _get_nb_manager(self) -> NotebookLMManager | None:
+        """Lazy initialization de NotebookLMManager. Retorna None si no está instalado."""
+        if self._nb_manager is None:
+            try:
+                self._nb_manager = NotebookLMManager(notebook_name=self._notebook_name)
+            except Exception as e:
+                console.print(f"[dim]NotebookLM no disponible: {e}[/dim]")
+                return None
+        return self._nb_manager
 
-    def set_notebook(self, name: str) -> None:
-        """Cambia el notebook activo (legacy)."""
-        self.nb_manager = NotebookLMManager(notebook_name=name)
-        self._nb_id = None
+    async def _ensure_notebook(self) -> str | None:
+        if self._nb_id is None:
+            nb = self._get_nb_manager()
+            if nb:
+                self._nb_id = await nb.create_or_get_notebook()
+        return self._nb_id
 
     @staticmethod
     def detect_content_type(prompt: str) -> ContentType:
@@ -294,6 +301,13 @@ class WriterEngine:
     async def _research_legacy(self, topic: str) -> str:
         """Fallback: investiga en NotebookLM (deprecated)."""
         nb_id = await self._ensure_notebook()
+        if not nb_id:
+            return ""
+
+        nb = self._get_nb_manager()
+        if not nb:
+            return ""
+
         questions = [
             (
                 f"Responde como experto tributario chileno sobre: {topic}. "
@@ -328,7 +342,7 @@ class WriterEngine:
         async def _ask_one(i: int, q: str) -> str:
             try:
                 console.print(f"  [dim]🔍 NotebookLM research {i}/{len(questions)}...[/dim]")
-                result = await self.nb_manager.ask_question(nb_id, q)
+                result = await nb.ask_question(nb_id, q)
                 answer = result.get("answer", "")
                 return answer if answer and len(answer) > 50 else ""
             except Exception as e:

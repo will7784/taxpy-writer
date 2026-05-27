@@ -92,6 +92,69 @@ class RAGEngine:
         "sabria", "sabrían", "sabrian", "dónde", "cuál", "cuáles", "quién", "quiénes",
     }
 
+    # ── Sinónimos legales: expande keywords del usuario a términos del texto legal ──
+    # Cada clave: palabra(s) que el usuario puede usar.  Valor: lista de términos legales
+    # equivalentes que aparecen en los documentos.
+    _SYNONYMS: dict[str, list[str]] = {
+        "pro": ["pro"],
+        "propyme": ["pro", "propyme", "propime"],
+        "pime": ["pime", "propyme", "propime", "pro"],
+        "pyme": ["pyme", "propyme", "propime", "pro"],
+        "propime": ["propyme", "propime", "pro"],
+        "propia": ["propyme", "propime", "pro"],
+        "propie": ["propyme", "propime", "pro"],
+        "renta": ["renta", "imponible"],
+        "rentas": ["renta", "imponible"],
+        "imponible": ["imponible", "renta"],
+        "imputación": ["imputación", "imputar", "imputan"],
+        "imputar": ["imputación", "imputar", "imputan"],
+        "imputan": ["imputación", "imputar", "imputan"],
+        "renta_presunta": ["renta_presunta"],
+        "renta_debito": ["renta_presunta", "debito"],
+        "debito": ["debito"],
+        "retencion": ["retencion", "retención", "retener"],
+        "retención": ["retencion", "retención", "retener"],
+        "retener": ["retencion", "retención", "retener"],
+        "perdida": ["perdida", "pérdida", "pérdidas"],
+        "pérdida": ["perdida", "pérdida", "pérdidas"],
+        "pérdidas": ["perdida", "pérdida", "pérdidas"],
+        "impuesto_renta": ["impuesto", "renta", "primera_categoria", "segunda_categoria"],
+        "primera_categoria": ["primera_categoria"],
+        "segunda_categoria": ["segunda_categoria"],
+        "tercera_categoria": ["tercera_categoria"],
+        "iva": ["iva", "valor_agregado"],
+        "credito": ["credito", "crédito", "acreditar"],
+        "crédito": ["credito", "crédito", "acreditar"],
+        "acreditar": ["credito", "crédito", "acreditar"],
+        "deuda_tributaria": ["deuda_tributaria", "tributaria"],
+        "tributaria": ["tributaria", "deuda_tributaria"],
+        "contribuyente": ["contribuyente"],
+        "contribuyentes": ["contribuyente"],
+        "residencia": ["residencia", "domicilio", "residir"],
+        "domicilio": ["domicilio", "residencia"],
+        "fuente": ["fuente"],
+        "fuentes": ["fuente"],
+        "dividendos": ["dividendo", "dividendos"],
+        "dividendo": ["dividendo", "dividendos"],
+        "sii": ["sii", "servicio_impuestos_internos"],
+        "resolucion": ["resolucion", "resolución"],
+        "resolución": ["resolucion", "resolución"],
+        "circular": ["circular", "oficio"],
+        "oficio": ["oficio", "circular"],
+        "jurisprudencia": ["jurisprudencia", "fallo", "sentencia"],
+        "fallo": ["jurisprudencia", "fallo", "sentencia"],
+        "sentencia": ["jurisprudencia", "fallo", "sentencia"],
+        "dl824": ["dl_824", "dl-824"],
+        "dl825": ["dl_825", "dl-825"],
+        "dl830": ["dl_830", "dl-830"],
+        "ley_income": ["dl_824", "dl-824", "renta"],
+        "ley_renta": ["dl_824", "dl-824"],
+        "codigo_tributario": ["dl_830", "dl-830"],
+        "iva_ley": ["dl_825", "dl-825"],
+        "articulo": ["articulo", "artículo"],
+        "artículo": ["articulo", "artículo"],
+    }
+
     def __init__(self) -> None:
         self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         self._law_cache: list[DocumentChunk] | None = None
@@ -130,7 +193,23 @@ class RAGEngine:
         if not self._law_cache:
             return []
 
-        keywords = [w.lower() for w in re.findall(r"\b\w+\b", query) if len(w) > 3 and w.lower() not in self._STOPWORDS]
+        raw_words = re.findall(r"\b\w+\b", query)
+        keywords = []
+        for w in raw_words:
+            w_low = w.lower()
+            if w_low in self._STOPWORDS:
+                continue
+            # Palabras cortas solo si son términos legales conocidos
+            if len(w) > 3 or w_low in self._SYNONYMS:
+                keywords.append(w_low)
+
+        # Expandir con sinónimos legales
+        expanded = set(keywords)
+        for kw in keywords:
+            if kw in self._SYNONYMS:
+                expanded.update(self._SYNONYMS[kw])
+        keywords = list(expanded)
+
         if not keywords:
             return []
 

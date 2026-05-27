@@ -4,6 +4,9 @@
 .env
 .venv/
 venv/
+notebooklm_auth.json
+notebooklm_state.json
+storage_state.json
 
 # ============================================
 # Python cache/build
@@ -47,9 +50,7 @@ payload_*.json
 sii_*.js
 sii_*.html
 
-# Directorios obsoletos
-sql/
-templates/
+# Directorios obsoletos (pero templates y sql se necesitan)
 .github/workflows/
 .claude/
 

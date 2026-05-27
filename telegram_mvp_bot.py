@@ -1,8 +1,8 @@
 """
-Bot de Telegram simplificado — Taxpy Writer.
+Bot de Telegram — Taxpy RAG.
 
-Sin cuotas, sin invites, sin RAG local.
-Solo NotebookLM + GPT-4o para escribir manuales, artículos y guiones.
+Usa Supabase pgvector + GPT-4o para responder consultas tributarias
+con fuentes legales verificables (leyes, circulares, jurisprudencia SII).
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from rich.console import Console
 
 import config
 import exporter
+from rag_engine import rag as rag_engine
 from settings_store import store as settings_store
 from voice_processor import VoiceProcessor
 from writer import WriterEngine
@@ -98,17 +99,16 @@ class WriterTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         text = (
-            "🤖 *Taxpy Writer*\n\n"
-            "Escribo manuales, artículos y guiones de video sobre "
-            "derecho tributario chileno usando todo el conocimiento "
-            "de mi cuaderno NotebookLM.\n\n"
+            "🤖 *Taxpy — Asistente Tributario*\n\n"
+            "Respondo consultas de derecho tributario chileno con sustento legal "
+            "usando leyes, circulares y jurisprudencia del SII.\n\n"
             "*Comandos:*\n"
             "• /manual `<tema>` — manual completo con capítulos\n"
             "• /articulo `<tema>` — artículo editorial largo\n"
             "• /guion `<tema>` — guion de video con escenas y planos\n"
             "• /historia `<tema>` — historia narrada como monólogo con sustento legal\n"
             "• /outline `<tema>` — índice detallado primero (tú apruebas)\n"
-            "• /notebook — info del cuaderno conectado\n"
+            "• /fuentes — info de la base de conocimiento\n"
             "• /voz `on` / `off` — activa respuestas de voz\n\n"
             "También puedes escribirme directamente o mandarme un *audio* para hablar con ClaudIA 🎙️"
         )
@@ -117,123 +117,40 @@ class WriterTelegramBot:
     async def _notebook(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Muestra información de los notebooks conectados con diagnóstico detallado."""
+        """Muestra información de la base de conocimiento RAG."""
         await update.message.chat.send_action(action="typing")
 
-        # Diagnóstico paso a paso
-        auth_raw = config.NOTEBOOKLM_AUTH_JSON
-        auth_len = len(auth_raw)
-        has_fallback = (config.BASE_DIR / "notebooklm_auth.json").exists()
-        lines = ["📓 *Diagnóstico NotebookLM*", ""]
+        lines = ["📚 *Base de Conocimiento Taxpy*", ""]
 
-        if auth_len == 0:
-            lines.extend(
-                [
-                    "❌ *NOTEBOOKLM_AUTH_JSON* está vacío.",
-                    "",
-                    "*Posibles causas:*",
-                    "1. No existe el archivo `notebooklm_auth.json`",
-                    "2. La variable de entorno no está configurada",
-                    "",
-                    "*Solución:*",
-                    "1. Sube el archivo `storage_state.json` desde el panel web",
-                    "2. O agrega la variable `NOTEBOOKLM_AUTH_JSON` en Railway",
-                    "",
-                    "*Para obtener el JSON en tu PC:*",
-                    "```",
-                    "Get-Content $env:USERPROFILE\\.notebooklm\\profiles\\default\\storage_state.json -Raw",
-                    "```",
-                ]
-            )
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-            return
-
-        lines.append(f"✅ Auth detectada: *{auth_len}* caracteres.")
-        if has_fallback:
-            lines.append("✅ Usando archivo fallback `notebooklm_auth.json`.")
-
-        # Intentar conectar
+        # Contar chunks por tipo
         try:
-            notebooks = await self.writer.nb_manager.list_notebooks()
-            lines.append(f"✅ Conexión exitosa. Cuentas con *{len(notebooks)}* cuaderno(s).")
+            from supabase_client import supabase
+            tbl = await supabase.table("document_chunks")
+
+            # Total de chunks
+            result = await tbl.select("*", count="exact").limit(0).execute()
+            total = result.count or 0
+            lines.append(f"📄 *Documentos indexados:* {total} chunks")
+
+            # Por tipo
+            for source_type in ["ley", "circular", "jurisprudencia_judicial", "oficio", "resolucion"]:
+                try:
+                    r = await tbl.select("*", count="exact").eq("source_type", source_type).limit(0).execute()
+                    count = r.count or 0
+                    if count > 0:
+                        emoji = {"ley": "⚖️", "circular": "📋", "jurisprudencia_judicial": "🏛️",
+                                 "oficio": "📨", "resolucion": "📜"}.get(source_type, "📄")
+                        lines.append(f"  {emoji} {source_type.replace('_', ' ').title()}: {count}")
+                except Exception:
+                    pass
+
         except Exception as e:
-            error_str = str(e).lower()
-            lines.append("❌ Error al conectar con NotebookLM.")
-            if "auth" in error_str or "unauthorized" in error_str or "credential" in error_str:
-                lines.extend(
-                    [
-                        "",
-                        "*Causa probable:* Las credenciales expiraron o son inválidas.",
-                        "",
-                        "*Solución:*",
-                        "1. Ejecuta `notebooklm login` en tu PC local",
-                        "2. Sube el nuevo `storage_state.json` desde el panel web",
-                        "3. O actualiza la variable en Railway",
-                    ]
-                )
-            elif "not installed" in error_str or "notebooklm" in error_str:
-                lines.append(
-                    "*Causa:* La librería `notebooklm-py` no está instalada. "
-                    "Verifica `requirements.txt`."
-                )
-            else:
-                lines.append(f"*Detalle:* `{str(e)[:200]}`")
-            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-            return
+            lines.append(f"⚠️ No se pudo consultar la base: `{str(e)[:100]}`")
 
-        # Leer configuración actual desde settings
-        primary_name = settings_store.get("primary_notebook_name", config.NOTEBOOKLM_NOTEBOOK_NAME)
-        secondary_name = settings_store.get("secondary_notebook_name", "")
-        primary_id = ""
-        secondary_id = ""
-        primary_sources = 0
-
-        try:
-            primary_id = await self.writer.nb_manager.create_or_get_notebook()
-            sources = await self.writer.nb_manager.get_notebook_sources(primary_id)
-            primary_sources = len(sources)
-        except Exception:
-            pass
-
-        lines.extend(
-            [
-                "",
-                f"*🥇 Cuaderno primario:* `{primary_name}`",
-                f"*ID:* `{primary_id or 'No encontrado'}`",
-                f"*Fuentes:* {primary_sources}",
-            ]
-        )
-
-        if secondary_name:
-            lines.extend(
-                [
-                    "",
-                    f"*🥈 Cuaderno secundario:* `{secondary_name}`",
-                    f"*ID:* `{secondary_id or 'No configurado'}`",
-                ]
-            )
-
-        lines.extend(
-            [
-                "",
-                "*Cuadernos disponibles:*",
-            ]
-        )
-        for nb in notebooks[:15]:
-            markers = []
-            if nb["id"] == primary_id:
-                markers.append("🥇")
-            if nb.get("name") == secondary_name:
-                markers.append("🥈")
-            marker = " " + " ".join(markers) if markers else ""
-            lines.append(f"  • `{nb['name']}`{marker}")
-        if len(notebooks) > 15:
-            lines.append(f"  ... y {len(notebooks) - 15} más")
-
-        lines.append(
-            "\n_Gestiona tus cuadernos desde el panel web:_ "
-            "https://taxpy-writer-production.up.railway.app/dashboard"
-        )
+        lines.extend([
+            "",
+            "💡 Escribe cualquier consulta tributaria y buscaré en estas fuentes.",
+        ])
 
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
@@ -317,11 +234,11 @@ class WriterTelegramBot:
         # Research
         await update.message.chat.send_action(action="typing")
         await update.message.reply_text(
-            f"🔍 Investigando *{topic}* en NotebookLM...",
+            f"🔍 Investigando *{topic}* en la base de conocimiento...",
             parse_mode="Markdown",
         )
         try:
-            research = await self.writer.research(topic)
+            research = await self.writer.research(topic, detected)
         except Exception as e:
             console.print(f"[red]Research error: {e}[/red]")
             research = ""
@@ -377,28 +294,20 @@ class WriterTelegramBot:
         chat_id = int(update.effective_chat.id)
         detected = content_type or self.writer.detect_content_type(topic)
 
-        # 0. Guardar tema como nota en NotebookLM para que el notebook tenga contexto
-        try:
-            nb_id = await self.writer.nb_manager.create_or_get_notebook()
-            note_title = f"Tema: {topic[:50]}"
-            await self.writer.nb_manager.save_note(nb_id, note_title, topic)
-        except Exception as e:
-            console.print(f"[yellow]No se pudo guardar nota: {e}[/yellow]")
-
         # 1. Research (si no viene pre-calculado)
         if not research:
             await update.message.chat.send_action(action="typing")
             status_research = await update.message.reply_text(
-                f"🔍 Investigando *{topic}* en NotebookLM... (puede tardar hasta 60 segundos)",
+                f"🔍 Buscando fuentes legales sobre *{topic}*...",
                 parse_mode="Markdown",
             )
             try:
-                research = await self.writer.research(topic)
+                research = await self.writer.research(topic, detected)
                 await status_research.delete()
             except Exception as e:
                 console.print(f"[red]Research error: {e}[/red]")
                 await status_research.edit_text(
-                    f"⚠️ NotebookLM tardó demasiado. Escribiré con el conocimiento que tengo disponible."
+                    "⚠️ No pude consultar la base de conocimiento. Escribiré con el conocimiento general."
                 )
                 research = ""
 
@@ -511,46 +420,66 @@ class WriterTelegramBot:
         update: Update,
         text: str,
     ) -> None:
-        """Procesa una conversación de chat: guarda nota en NotebookLM → responde con NotebookLM directo."""
+        """Procesa una conversación de chat: busca en RAG → responde con GPT-4o."""
         chat_id = int(update.effective_chat.id)
 
         await update.message.chat.send_action(action="typing")
-        status_msg = await update.message.reply_text("💬 Consultando a NotebookLM...")
+        status_msg = await update.message.reply_text("🔍 Buscando en la base de conocimiento...")
 
         content = ""
-        source = "notebooklm"
+        source = "rag"
+        search_results = []
 
         try:
-            # 1. Asegurar notebook
-            nb_id = await self.writer.nb_manager.create_or_get_notebook()
+            # 1. Buscar en RAG
+            search_results = await rag_engine.search_for_conversation(text)
 
-            # 2. Guardar pregunta como nota en NotebookLM
-            try:
-                note_title = f"Consulta {datetime.now().strftime('%Y-%m-%d %H:%M')}"
-                await self.writer.nb_manager.save_note(nb_id, note_title, text)
-            except Exception as e:
-                console.print(f"[yellow]⚠️ No se pudo guardar nota: {e}[/yellow]")
-                # Continuamos igual; la pregunta puede funcionar sin nota
+            if not search_results:
+                await status_msg.edit_text(
+                    "💬 No encontré fuentes específicas sobre eso. Te respondo con conocimiento general..."
+                )
+                # Fallback a GPT-4o sin contexto
+                content = await self.writer.write(text, "", "conversacion")
+                source = "gpt4o_fallback"
+            else:
+                # 2. Construir contexto y generar respuesta
+                context = await rag_engine.build_context(search_results)
 
-            # 3. Preguntar directamente a NotebookLM
-            result = await self.writer.nb_manager.ask_question(nb_id, text)
-            answer = result.get("answer", "")
+                await status_msg.edit_text("💬 Analizando fuentes legales...")
 
-            if not answer:
-                await status_msg.edit_text("💬 No encontré una respuesta para eso en mis fuentes.")
-                return
+                system = (
+                    "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL, "
+                    "como si estuvieras hablando por teléfono con un colega. "
+                    "Usa las fuentes proporcionadas para sustentar tu respuesta. "
+                    "NUNCA uses markdown, títulos, bullets ni numeración. "
+                    "Máximo 250 palabras. Termina con una pregunta breve."
+                )
 
-            # 4. Limpiar referencias numéricas [1], [2], etc.
-            content = self._clean_notebooklm_refs(answer)
+                user_prompt = (
+                    f"Consulta del usuario: {text}\n\n"
+                    f"Fuentes relevantes:\n{context}\n\n"
+                    "Responde de forma conversacional, citando las normas de manera natural."
+                )
+
+                response = await self.writer._openai.chat.completions.create(
+                    model=config.OPENAI_MODEL,
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user_prompt},
+                    ],
+                    temperature=0.7,
+                    max_tokens=800,
+                )
+                content = (response.choices[0].message.content or "").strip()
 
         except Exception as e:
-            console.print(f"[red]NotebookLM chat error: {e}[/red]")
+            console.print(f"[red]RAG chat error: {e}[/red]")
             import traceback
             console.print(traceback.format_exc())
 
-            # Fallback: usar GPT-4o para no dejar al usuario sin respuesta
+            # Fallback: usar GPT-4o
             await status_msg.edit_text(
-                "⚠️ NotebookLM no respondió. Generando respuesta con GPT-4o..."
+                "⚠️ No pude consultar la base de conocimiento. Generando respuesta con GPT-4o..."
             )
             try:
                 content = await self.writer.write(text, "", "conversacion")
@@ -558,7 +487,7 @@ class WriterTelegramBot:
             except Exception as e2:
                 console.print(f"[red]Fallback GPT-4o también falló: {e2}[/red]")
                 await status_msg.edit_text(
-                    "❌ Tanto NotebookLM como GPT-4o fallaron. Intenta de nuevo en unos segundos."
+                    "❌ Error generando la respuesta. Intenta de nuevo en unos segundos."
                 )
                 return
 
@@ -573,16 +502,38 @@ class WriterTelegramBot:
             "research": content,
             "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
             "outline_pending": False,
+            "search_results": [r.chunk.chunk_uid for r in search_results],
         }
 
         # Enviar texto
         await update.message.reply_text(content)
 
+        # Botón de PDF si hay fuentes con PDF disponible
+        if search_results:
+            pdf_buttons = []
+            seen_pdfs = set()
+            for r in search_results[:3]:
+                meta = r.chunk.metadata or {}
+                pdf_url = meta.get("pdf_url", "")
+                if pdf_url and pdf_url != "N/A" and pdf_url not in seen_pdfs:
+                    seen_pdfs.add(pdf_url)
+                    pdf_buttons.append(
+                        InlineKeyboardButton(
+                            f"📄 {r.chunk.filename[:30]}",
+                            url=pdf_url,
+                        )
+                    )
+            if pdf_buttons:
+                await update.message.reply_text(
+                    "📎 Fuentes con PDF disponible:",
+                    reply_markup=InlineKeyboardMarkup([pdf_buttons]),
+                )
+
         # Voz si está activada (modo legacy /voz on)
         if self._sessions[chat_id].get("voice_enabled") and self.voice:
             await update.message.chat.send_action(action="upload_voice")
             try:
-                voice_bytes = await self.voice.synthesize(content[:3800])
+                voice_bytes = await self.voice.synthesize(content)
                 await update.message.reply_voice(
                     voice=voice_bytes,
                     caption="🎙️ ClaudIA",
@@ -750,7 +701,7 @@ class WriterTelegramBot:
         app.drop_pending_updates = True
 
         app.add_handler(CommandHandler("start", self._start))
-        app.add_handler(CommandHandler("notebook", self._notebook))
+        app.add_handler(CommandHandler("fuentes", self._notebook))
         app.add_handler(CommandHandler("manual", self._manual))
         app.add_handler(CommandHandler("articulo", self._articulo))
         app.add_handler(CommandHandler("guion", self._guion))
@@ -765,8 +716,8 @@ class WriterTelegramBot:
 
         voice_status = "🎙️ voz" if self.voice else "📝 solo texto"
         console.print(
-            "[green]✅ Taxpy Writer Bot iniciado[/green]\n"
-            f"[dim]NotebookLM: {config.NOTEBOOKLM_NOTEBOOK_NAME}[/dim]\n"
+            "[green]✅ Taxpy RAG Bot iniciado[/green]\n"
+            f"[dim]RAG: Supabase pgvector[/dim]\n"
             f"[dim]LLM: {config.OPENAI_MODEL} | {voice_status}[/dim]"
         )
         app.run_polling(allowed_updates=Update.ALL_TYPES, stop_signals=())

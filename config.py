@@ -1,5 +1,5 @@
 """
-Configuración centralizada — Escritor Taxpy (NotebookLM + GPT-4o)
+Configuración centralizada — Taxpy RAG (Supabase pgvector + GPT-4o)
 """
 
 import os
@@ -17,28 +17,26 @@ BASE_DIR = Path(__file__).parent
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # ============================================
-# OpenAI (escritura)
+# OpenAI (escritura + embeddings + voz)
 # ============================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
 # ============================================
-# Google Gemini (STT/TTS)
+# Supabase (RAG vector database)
 # ============================================
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 # ============================================
-# NotebookLM
+# NotebookLM (DEPRECATED — se eliminará en Fase 5)
 # ============================================
 NOTEBOOKLM_NOTEBOOK_NAME = os.getenv("NOTEBOOKLM_NOTEBOOK_NAME", "Taxpy Conocimiento")
 NOTEBOOKLM_NOTEBOOK_SECONDARY = os.getenv("NOTEBOOKLM_NOTEBOOK_SECONDARY", "")
 
-# Para Railway / headless: pega el contenido de storage_state.json en la variable
-# O sube un archivo notebooklm_auth.json a la raíz como fallback
 _auth_file = BASE_DIR / "notebooklm_auth.json"
-
-# Prioridad: variable de entorno > archivo local
-# Esto permite actualizar credenciales desde Railway sin hacer commit
 NOTEBOOKLM_AUTH_JSON = os.getenv("NOTEBOOKLM_AUTH_JSON", "").strip()
 if not NOTEBOOKLM_AUTH_JSON and _auth_file.exists():
     NOTEBOOKLM_AUTH_JSON = _auth_file.read_text(encoding="utf-8").strip()
@@ -55,6 +53,8 @@ WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.5"))
 TELEGRAM_DB_PATH = Path(os.getenv("TELEGRAM_DB_PATH", str(BASE_DIR / "taxpy_writer.sqlite3")))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", str(BASE_DIR / "exports")))
 EXPORTS_DIR.mkdir(exist_ok=True)
+
+DOCUMENTS_DIR = Path(os.getenv("DOCUMENTS_DIR", str(BASE_DIR / "documents")))
 
 # ============================================
 # Agente de escritura

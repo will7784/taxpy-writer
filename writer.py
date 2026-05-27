@@ -3,7 +3,7 @@ Motor de escritura inteligente.
 
 Flujo:
 1. Detecta tipo de contenido (manual / artículo / guion).
-2. Investiga en NotebookLM (preguntas estratégicas con enfoque legal).
+2. Investiga en RAG Supabase pgvector (búsqueda semántica de fuentes legales).
 3. Redacta contenido largo con GPT-4o usando investigación + agent.md como contexto.
 4. Modo outline: genera índice detallado primero para aprobación del usuario.
 """
@@ -18,6 +18,7 @@ from rich.console import Console
 
 import config
 from notebooklm_manager import NotebookLMManager
+from rag_engine import rag as rag_engine
 from settings_store import store as settings_store
 
 console = Console()
@@ -134,10 +135,11 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
 
 class WriterEngine:
     def __init__(self, notebook_name: str | None = None) -> None:
-        # Usar notebook_name proporcionado, o leer desde settings, o fallback a config
+        # NotebookLM legacy (deprecated, se eliminará en Fase 5)
         name = notebook_name or settings_store.get("primary_notebook_name") or config.NOTEBOOKLM_NOTEBOOK_NAME
         self.nb_manager = NotebookLMManager(notebook_name=name)
         self._nb_id: str | None = None
+
         self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
         self._agent_md = _load_agent_md()
 
@@ -147,13 +149,27 @@ class WriterEngine:
         return self._nb_id
 
     def set_notebook(self, name: str) -> None:
-        """Cambia el notebook activo (útil para alternar entre cuadernos)."""
+        """Cambia el notebook activo (legacy)."""
         self.nb_manager = NotebookLMManager(notebook_name=name)
         self._nb_id = None
 
     @staticmethod
     def detect_content_type(prompt: str) -> ContentType:
-        p = prompt.lower()
+        p = prompt.lower().strip()
+
+        # 1. Detectar conversación casual (saludos, mensajes cortos, preguntas directas)
+        conversation_signals = [
+            "hola", "buenos días", "buenas tardes", "buenas noches",
+            "cómo estás", "como estas", "qué tal", "que tal",
+            "gracias", "de nada", "adiós", "chao",
+            "me puedes ayudar", "tengo una duda", "quiero preguntar",
+            "qué opinas", "que opinas", "explicame", "explícame",
+        ]
+        # Mensajes muy cortos (< 40 chars) o que empiezan con saludo → conversación
+        if len(p) < 40 or any(p.startswith(s) for s in conversation_signals):
+            return "conversacion"
+
+        # 2. Detectar tipos de documento por keywords
         guion_keywords = [
             "guion", "guión", "video", "youtube", "tiktok", "reel",
             "escena", "plano", "dialogo", "diálogo", "voz en off",
@@ -174,62 +190,35 @@ class WriterEngine:
             return "manual"
         if any(k in p for k in historia_keywords):
             return "historia"
+
+        # 3. Si parece una pregunta directa (qué, cómo, cuándo, por qué) y no es largo → conversación
+        question_starters = ["qué ", "que ", "cómo ", "como ", "cuándo ", "cuando ", "por qué ", "por que ", "cuál ", "cual ", "dónde ", "donde ", "quién ", "quien "]
+        if any(p.startswith(q) for q in question_starters) and len(p) < 120:
+            return "conversacion"
+
         return "articulo"
 
-    async def research(self, topic: str) -> str:
-        """Investiga en NotebookLM con preguntas legales específicas."""
-        nb_id = await self._ensure_notebook()
-        questions = [
-            (
-                f"Responde como experto tributario chileno sobre: {topic}. "
-                "Incluye EXACTAMENTE: (a) artículos del Código Tributario y Ley de Renta aplicables con números exactos, "
-                "(b) oficios o circulares del SII relacionados con números y fechas, (c) jurisprudencia relevante si existe. "
-                "Cita siempre el número de artículo y la norma. Sé exhaustivo, no resumas."
-            ),
-            (
-                f"¿Qué errores cometen los contribuyentes respecto a {topic}? "
-                "Incluye sanciones, plazos legales, consecuencias de incumplimiento y casos reales si los conoces. "
-                "Cita artículos específicos del Código Tributario."
-            ),
-            (
-                f"Proporciona un ejemplo práctico COMPLETO y DESARROLLADO sobre {topic}: "
-                "sujeto (empresa o persona con nombre ficticio), hechos concretos (montos, fechas, montos exactos), "
-                "aplicación de la norma paso a paso y resultado final con cifras. "
-                "Incluye la base legal aplicable al caso. El ejemplo debe tener mínimo 200 palabras."
-            ),
-            (
-                f"¿Cuáles son los pasos prácticos, trámites, formularios y plazos específicos "
-                f"que un contribuyente debe seguir respecto a {topic}? "
-                "Incluye formularios SII, plazos en días hábiles, y requisitos documentales."
-            ),
-            (
-                f"¿Existen excepciones, beneficios tributarios o régimenes especiales aplicables a {topic}? "
-                "Incluye montos de exención, topes, porcentajes específicos y artículos de ley."
-            ),
-        ]
-        findings: list[str] = []
-        import asyncio
+    async def research(self, topic: str, content_type: ContentType = "articulo") -> str:
+        """Investiga en RAG Supabase con búsqueda semántica."""
+        console.print(f"  [dim]🔍 Buscando en RAG: {topic}...[/dim]")
 
-        async def _ask_one(i: int, q: str) -> str:
-            try:
-                console.print(f"  [dim]🔍 NotebookLM research {i}/{len(questions)}...[/dim]")
-                result = await self.nb_manager.ask_question(nb_id, q)
-                answer = result.get("answer", "")
-                return answer if answer and len(answer) > 50 else ""
-            except Exception as e:
-                console.print(f"  [yellow]⚠️ Research {i} falló: {e}[/yellow]")
+        try:
+            # Búsqueda semántica en todas las fuentes relevantes
+            results = await rag_engine.search_for_document(topic, content_type)
+            if not results:
+                console.print("  [yellow]⚠️ No se encontraron fuentes en RAG[/yellow]")
                 return ""
 
-        # Ejecutar todas las preguntas en paralelo con timeout global
-        tasks = [asyncio.create_task(_ask_one(i, q)) for i, q in enumerate(questions, 1)]
-        try:
-            answers = await asyncio.wait_for(asyncio.gather(*tasks), timeout=60.0)
-        except asyncio.TimeoutError:
-            console.print("[yellow]⚠️ Research global timeout (60s). Usando respuestas parciales.[/yellow]")
-            answers = [t.result() if t.done() else "" for t in tasks]
-
-        findings = [a for a in answers if a]
-        return "\n\n---\n\n".join(findings) if findings else ""
+            context = await rag_engine.build_context(results)
+            console.print(f"  [dim]✓ {len(results)} fuentes encontradas[/dim]")
+            return context
+        except Exception as e:
+            console.print(f"  [yellow]⚠️ RAG research falló: {e}[/yellow]")
+            # Fallback legacy: intentar NotebookLM
+            try:
+                return await self._research_legacy(topic)
+            except Exception:
+                return ""
 
     async def generate_outline(
         self,
@@ -277,7 +266,7 @@ class WriterEngine:
 
         user_prompt = (
             f"Tema a desarrollar: {topic}\n\n"
-            f"Información de fuentes (NotebookLM):\n{research_ctx}\n\n"
+            f"Información de fuentes (base de conocimiento):\n{research_ctx}\n\n"
         )
         if outline:
             user_prompt += f"Índice aprobado por el usuario:\n{outline}\n\n"
@@ -301,6 +290,60 @@ class WriterEngine:
             max_tokens=config.WRITER_MAX_TOKENS,
         )
         return (response.choices[0].message.content or "").strip()
+
+    async def _research_legacy(self, topic: str) -> str:
+        """Fallback: investiga en NotebookLM (deprecated)."""
+        nb_id = await self._ensure_notebook()
+        questions = [
+            (
+                f"Responde como experto tributario chileno sobre: {topic}. "
+                "Incluye EXACTAMENTE: (a) artículos del Código Tributario y Ley de Renta aplicables con números exactos, "
+                "(b) oficios o circulares del SII relacionados con números y fechas, (c) jurisprudencia relevante si existe. "
+                "Cita siempre el número de artículo y la norma. Sé exhaustivo, no resumas."
+            ),
+            (
+                f"¿Qué errores cometen los contribuyentes respecto a {topic}? "
+                "Incluye sanciones, plazos legales, consecuencias de incumplimiento y casos reales si los conoces. "
+                "Cita artículos específicos del Código Tributario."
+            ),
+            (
+                f"Proporciona un ejemplo práctico COMPLETO y DESARROLLADO sobre {topic}: "
+                "sujeto (empresa o persona con nombre ficticio), hechos concretos (montos, fechas, montos exactos), "
+                "aplicación de la norma paso a paso y resultado final con cifras. "
+                "Incluye la base legal aplicable al caso. El ejemplo debe tener mínimo 200 palabras."
+            ),
+            (
+                f"¿Cuáles son los pasos prácticos, trámites, formularios y plazos específicos "
+                f"que un contribuyente debe seguir respecto a {topic}? "
+                "Incluye formularios SII, plazos en días hábiles, y requisitos documentales."
+            ),
+            (
+                f"¿Existen excepciones, beneficios tributarios o régimenes especiales aplicables a {topic}? "
+                "Incluye montos de exención, topes, porcentajes específicos y artículos de ley."
+            ),
+        ]
+        findings: list[str] = []
+        import asyncio
+
+        async def _ask_one(i: int, q: str) -> str:
+            try:
+                console.print(f"  [dim]🔍 NotebookLM research {i}/{len(questions)}...[/dim]")
+                result = await self.nb_manager.ask_question(nb_id, q)
+                answer = result.get("answer", "")
+                return answer if answer and len(answer) > 50 else ""
+            except Exception as e:
+                console.print(f"  [yellow]⚠️ Research {i} falló: {e}[/yellow]")
+                return ""
+
+        tasks = [asyncio.create_task(_ask_one(i, q)) for i, q in enumerate(questions, 1)]
+        try:
+            answers = await asyncio.wait_for(asyncio.gather(*tasks), timeout=60.0)
+        except asyncio.TimeoutError:
+            console.print("[yellow]⚠️ Research global timeout (60s). Usando respuestas parciales.[/yellow]")
+            answers = [t.result() if t.done() else "" for t in tasks]
+
+        findings = [a for a in answers if a]
+        return "\n\n---\n\n".join(findings) if findings else ""
 
     @staticmethod
     def split_for_telegram(text: str, max_len: int = 4000) -> list[str]:

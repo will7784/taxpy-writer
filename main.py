@@ -1,5 +1,5 @@
 """
-Taxpy Writer — Punto de entrada.
+Taxpy RAG — Punto de entrada.
 Arranca el servidor web en el main thread y el bot de Telegram en background.
 """
 
@@ -19,6 +19,12 @@ if __name__ == "__main__":
         raise RuntimeError(
             "OPENAI_API_KEY no configurado. "
             "Se requiere para redactar contenido con GPT-4o."
+        )
+    if not config.SUPABASE_URL or not config.SUPABASE_SERVICE_KEY:
+        raise RuntimeError(
+            "SUPABASE_URL y SUPABASE_SERVICE_KEY no configurados. "
+            "Se requieren para el RAG vector database. "
+            "Revisa tu archivo .env o variables de entorno."
         )
 
     def _run_bot() -> None:

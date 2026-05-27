@@ -278,6 +278,9 @@ class WriterEngine:
         if outline:
             user_prompt += f"Índice aprobado por el usuario:\n{outline}\n\n"
         user_prompt += (
+            "REGLA ABSOLUTA: Solo usa la información de las FUENTES proporcionadas arriba. "
+            "NO inventes artículos, leyes, decretos, oficios, circulares ni jurisprudencia que no "
+            "aparezcan en las fuentes. Cita SIEMPRE la norma exacta con artículo, ley y número de decreto.\n\n"
             "Escribe el contenido COMPLETO, EXTENSO y PROFUNDO siguiendo el índice si existe. "
             "NO te quedes corto. NO resumas. Desarrolla cada punto con máximo detalle. "
             "Usa TODOS los tokens disponibles para entregar el manual más completo posible. "

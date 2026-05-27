@@ -435,12 +435,16 @@ class WriterTelegramBot:
             search_results = await rag_engine.search_for_conversation(text)
 
             if not search_results:
-                await status_msg.edit_text(
-                    "💬 No encontré fuentes específicas sobre eso. Te respondo con conocimiento general..."
+                await status_msg.delete()
+                content = (
+                    "💬 No encontré información sobre eso en mi base de conocimiento tributario.\n\n"
+                    "Actualmente tengo indexados:\n"
+                    "• Leyes: Código Tributario, Ley de Renta (LIR), Ley del IVA\n"
+                    "• Circulares del SII\n"
+                    "• Jurisprudencia judicial del SII (Código Tributario, arts. 1-57)\n\n"
+                    "Prueba con una consulta relacionada con estos temas."
                 )
-                # Fallback a GPT-4o sin contexto
-                content = await self.writer.write(text, "", "conversacion")
-                source = "gpt4o_fallback"
+                source = "rag_empty"
             else:
                 # 2. Construir contexto y generar respuesta
                 context = await rag_engine.build_context(search_results)
@@ -449,16 +453,20 @@ class WriterTelegramBot:
 
                 system = (
                     "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL, "
-                    "como si estuvieras hablando por teléfono con un colega. "
-                    "Usa las fuentes proporcionadas para sustentar tu respuesta. "
+                    "como si estuvieras hablando por teléfono con un colega.\n\n"
+                    "REGLA ABSOLUTA: Solo usa la información de las FUENTES proporcionadas abajo. "
+                    "NO inventes artículos, leyes, decretos, oficios, circulares ni jurisprudencia que no "
+                    "aparezcan en las fuentes. Si la información no está en las fuentes, dí que no lo tienes. "
+                    "Cita SIEMPRE la norma exacta (artículo, ley, decreto, oficio o circular) entre paréntesis.\n\n"
                     "NUNCA uses markdown, títulos, bullets ni numeración. "
                     "Máximo 250 palabras. Termina con una pregunta breve."
                 )
 
                 user_prompt = (
                     f"Consulta del usuario: {text}\n\n"
-                    f"Fuentes relevantes:\n{context}\n\n"
-                    "Responde de forma conversacional, citando las normas de manera natural."
+                    f"FUENTES RELEVANTES (usa SOLO esta información):\n{context}\n\n"
+                    "Responde de forma conversacional usando ÚNICAMENTE las fuentes anteriores. "
+                    "Si la respuesta no está en las fuentes, dí honestamente que no tienes esa información."
                 )
 
                 response = await self.writer._openai.chat.completions.create(

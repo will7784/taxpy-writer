@@ -299,6 +299,34 @@ class RAGEngine:
         )
         return [r for _, _, r in scored[:top_k]]
 
+    def _apply_domain_rules(self, query: str, seen: set[str]) -> list[SearchResult]:
+        """Inserta chunks clave por dominio cuando la query semántica/keyword no los alcanza.
+
+        El texto legal usa términos formales (ej: 'artículo 14 letra D') que el usuario
+        nunca menciona coloquialmente (ej: 'PRO-PYME', 'pyme').  Estas reglas hardcodean
+        los puentes conceptuales más frecuentes para que el RAG no devuelva vacío.
+        """
+        self._load_law_cache()
+        if not self._law_cache:
+            return []
+
+        q = query.lower()
+        extra: list[SearchResult] = []
+
+        # ── Regla 1: PYME / PRO-PYME + intereses/facilidades/convenios → Art. 192 CT ──
+        # El Art. 192 CT menciona 'artículo 14 letra D' pero NUNCA la palabra 'propyme'.
+        pyme_terms = ["propyme", "pro-pyme", "pyme", "14 letra d", "art. 14 d", "articulo 14 d", "regimen 14 d"]
+        interest_terms = ["interes", "convenio", "facilidad", "facilit", "pago", "deuda", "beneficio", "condonacion", "condonación", "cuota", "tesoreria", "plazo"]
+        if any(t in q for t in pyme_terms) and any(t in q for t in interest_terms):
+            target_uid = "ley_codigo_tributario_art_192"
+            if target_uid not in seen:
+                for chunk in self._law_cache:
+                    if chunk.chunk_uid == target_uid:
+                        extra.append(SearchResult(chunk=chunk, similarity=0.95))
+                        break
+
+        return extra
+
     async def search(
         self,
         query: str,
@@ -377,6 +405,16 @@ class RAGEngine:
                     seen.add(uid)
                     vector_results.append(kr)
                 # Si el chunk ya estaba en vectorial, no bajamos su similitud
+
+            # 5. Reglas de dominio: forzar chunks clave cuando la semántica falla
+            # porque el usuario usa términos coloquiales que no aparecen en el texto legal.
+            domain_results = self._apply_domain_rules(query, seen)
+            for dr in domain_results:
+                uid = dr.chunk.chunk_uid
+                if uid not in seen:
+                    seen.add(uid)
+                    vector_results.append(dr)
+
             # Reordenar por similitud descendente
             vector_results.sort(key=lambda x: x.similarity, reverse=True)
 

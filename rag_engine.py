@@ -100,6 +100,7 @@ class RAGEngine:
         # El retrieval debe buscar PYME cuando el usuario dice PIME.
         "pro": ["pro"],
         "propyme": ["pro", "propyme", "propime"],
+        "propymé": ["propyme", "pyme", "pro"],
         "pime": ["propyme", "pyme", "pro"],
         "pyme": ["pyme", "propyme", "pro"],
         "propime": ["propyme", "pyme", "pro"],
@@ -463,39 +464,77 @@ class RAGEngine:
             include_derogadas=False,
         )
 
+    # Mapeo law_tag → nombre legible de la ley
+    _LAW_TAG_NAMES: dict[str, str] = {
+        "lir": "Ley sobre Impuesto a la Renta (DL-824)",
+        "iva": "Ley sobre Impuesto a las Ventas y Servicios (DL-825)",
+        "codigo_tributario": "Código Tributario (DL-830)",
+    }
+
+    @staticmethod
+    def _extract_article_from_uid(chunk_uid: str) -> str | None:
+        """Extrae 'Art. 192' de 'ley_codigo_tributario_art_192' o similar."""
+        match = re.search(r"_art[_\.]?(\d+(?:[_\-]\d+)?)", chunk_uid, re.IGNORECASE)
+        if match:
+            num = match.group(1).replace("_", " ").replace("-", " ")
+            return f"Art. {num}"
+        return None
+
     async def build_context(self, results: list[SearchResult]) -> str:
         """
         Construye un string de contexto a partir de los resultados de búsqueda,
         formateado para ser usado como contexto en prompts de GPT-4o.
+
+        Cada chunk se presenta con metadatos ENRIQUECIDOS ("marcas") para que el LLM
+        sepa EXACTAMENTE de qué ley y artículo proviene cada fragmento.
         """
         if not results:
             return "No se encontraron fuentes relevantes en la base de conocimiento."
 
         lines: list[str] = []
-        lines.append("=== FUENTES RELEVANTES ===\n")
+        lines.append("=== FUENTES RELEVANTES ===")
+        lines.append("Instrucción: cada fragmento lleva una MARCA que indica su ley, artículo y archivo de origen. "
+                     "Usa estas marcas para citar con precisión.\n")
 
         for i, r in enumerate(results, 1):
             chunk = r.chunk
             meta = chunk.metadata or {}
 
-            # Header con fuente y score
-            header_parts = [f"[{i}]"]
-            if chunk.source_type:
-                header_parts.append(chunk.source_type.replace("_", " ").title())
-            if chunk.section_level_name:
-                header_parts.append(f"— {chunk.section_level_name}")
-            if meta.get("codigo_pronunciamiento"):
-                header_parts.append(f"({meta['codigo_pronunciamiento']})")
+            # ── Construir header enriquecido (MARCA) ──
+            header_parts: list[str] = [f"[{i}]"]
+
+            # Ley / cuerpo legal
+            law_name = self._LAW_TAG_NAMES.get(chunk.law_tag or "", "")
+            if law_name:
+                header_parts.append(f"LEY: {law_name}")
+            elif chunk.source_type:
+                header_parts.append(f"TIPO: {chunk.source_type.replace('_', ' ').title()}")
+
+            # Artículo (del UID si es ley)
+            article = self._extract_article_from_uid(chunk.chunk_uid)
+            if article:
+                header_parts.append(f"ARTÍCULO: {article}")
+            elif chunk.section_level_name:
+                # Limpiar caracteres corruptos comunes en los headers
+                clean_header = chunk.section_level_name.replace("�", "")
+                header_parts.append(f"SECCIÓN: {clean_header}")
+
+            # Archivo origen
+            if chunk.filename:
+                header_parts.append(f"ARCHIVO: {chunk.filename}")
+
+            # Score de relevancia (ayuda al LLM a priorizar)
+            header_parts.append(f"RELEVANCIA: {r.similarity:.2f}")
 
             lines.append(" | ".join(header_parts))
+            lines.append("-" * 60)
 
             # Contenido
             content = chunk.content.strip()
-            # Limpiar exceso de saltos de línea
             content = re.sub(r"\n{3,}", "\n\n", content)
             lines.append(content)
 
-            # Metadatos adicionales relevantes
+            # Metadatos adicionales
             meta_parts = []
             if meta.get("fecha"):
                 meta_parts.append(f"Fecha: {meta['fecha']}")

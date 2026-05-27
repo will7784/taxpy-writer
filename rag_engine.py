@@ -34,7 +34,8 @@ class RAGEngine:
     """
 
     DEFAULT_TOP_K = 10
-    CONVERSATION_TOP_K = 8  # Aumentado: chunks de leyes ahora son más pequeños y precisos
+    CONVERSATION_TOP_K = 20  # Aumentado drásticamente: el LLM necesita ver más contexto
+                               # para cruzar leyes (ej: Art. 14 D LIR ↔ Art. 192 CT)
 
     # Palabras vacías en español + conversacionales que no aportan a búsqueda legal
     _STOPWORDS: set[str] = {
@@ -399,7 +400,9 @@ class RAGEngine:
         # alinean con texto normativo denso de leyes chilenas.
         wants_laws = source_types is None or "ley" in source_types
         if wants_laws:
-            keyword_results = self._keyword_search_local(query, top_k=8)
+            # Traemos más resultados keyword de lo que necesitamos, para que la fusión
+            # tenga más candidatos antes de recortar al top_k final.
+            keyword_results = self._keyword_search_local(query, top_k=min(top_k + 8, 25))
             for kr in keyword_results:
                 uid = kr.chunk.chunk_uid
                 if uid not in seen:

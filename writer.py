@@ -216,7 +216,7 @@ class WriterEngine:
                 console.print("  [yellow]⚠️ No se encontraron fuentes en RAG[/yellow]")
                 return ""
 
-            context = await rag_engine.build_context(results)
+            context = await rag_engine.build_context(results, query=topic)
             console.print(f"  [dim]✓ {len(results)} fuentes encontradas[/dim]")
             return context
         except Exception as e:

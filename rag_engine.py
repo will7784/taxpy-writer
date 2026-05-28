@@ -483,7 +483,7 @@ class RAGEngine:
             return f"Art. {num}"
         return None
 
-    async def build_context(self, results: list[SearchResult]) -> str:
+    async def build_context(self, results: list[SearchResult], query: str = "") -> str:
         """
         Construye un string de contexto a partir de los resultados de búsqueda,
         formateado para ser usado como contexto en prompts de GPT-4o.
@@ -498,6 +498,27 @@ class RAGEngine:
         lines.append("=== FUENTES RELEVANTES ===")
         lines.append("Instrucción: cada fragmento lleva una MARCA que indica su ley, artículo y archivo de origen. "
                      "Usa estas marcas para citar con precisión.\n")
+
+        # ── Notas de dominio: aclaraciones explícitas para conectar conceptos ──
+        query_lower = query.lower()
+        domain_notes: list[str] = []
+        if any(t in query_lower for t in ["propyme", "pro-pyme", "pyme", "14 letra d", "art. 14 d"]):
+            domain_notes.append(
+                "El régimen PRO-PYME está regulado por el Art. 14 letra D de la LIR (DL-824). "
+                "Cuando una fuente mencione 'artículo 14 letra D' o 'contribuyentes sujetos al régimen contenido en el artículo 14 letra D', "
+                "se refiere EXPLICITAMENTE al régimen PRO-PYME."
+            )
+        if any(t in query_lower for t in ["interes", "convenio", "facilidad", "facilit", "pago", "deuda", "condonacion"]):
+            domain_notes.append(
+                "El Art. 192 del Código Tributario (DL-830) establece beneficios específicos para PRO-PYME: "
+                "no se aplican intereses sobre cuotas de convenios de hasta 18 meses, y el pago inicial no puede superar el 5% de la deuda."
+            )
+
+        if domain_notes:
+            lines.append("=== NOTAS DE DOMINIO (interpretación obligatoria) ===")
+            for note in domain_notes:
+                lines.append(f"• {note}")
+            lines.append("")
 
         for i, r in enumerate(results, 1):
             chunk = r.chunk

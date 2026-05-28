@@ -447,7 +447,7 @@ class WriterTelegramBot:
                 source = "rag_empty"
             else:
                 # 2. Construir contexto y generar respuesta
-                context = await rag_engine.build_context(search_results)
+                context = await rag_engine.build_context(search_results, query=text)
 
                 await status_msg.edit_text("💬 Analizando fuentes legales...")
 
@@ -457,10 +457,15 @@ class WriterTelegramBot:
                 system = (
                     "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL, "
                     "como si estuvieras hablando por teléfono con un colega.\n\n"
-                    "REGLA ABSOLUTA: Solo usa la información de las FUENTES proporcionadas abajo. "
+                    "REGLA ABSOLUTA: Usa ÚNICAMENTE la información de las FUENTES proporcionadas abajo. "
                     "NO inventes artículos, leyes, decretos, oficios, circulares ni jurisprudencia que no "
-                    "aparezcan en las fuentes. Si la información no está en las fuentes, dí que no lo tienes. "
-                    "Cita SIEMPRE la norma exacta (artículo, ley, decreto, oficio o circular) entre paréntesis.\n\n"
+                    "aparezcan en las fuentes.\n\n"
+                    "REGLA DE INTERPRETACIÓN: Si las fuentes contienen la respuesta —incluso usando "
+                    "términos técnicos, referencias cruzadas o números de artículo diferente a los de la pregunta— "
+                    "debes RECONOCERLA, EXPLICARLA con precisión y CITAR la norma exacta. "
+                    "Las NOTAS DE DOMINIO en el contexto te indican explícitamente cómo interpretar estas conexiones.\n\n"
+                    "NUNCA digas 'no encontré información' si la respuesta ESTÁ en las fuentes, aunque use "
+                    "lenguaje formal de ley (ej: 'artículo 14 letra D' en lugar de 'PRO-PYME').\n\n"
                     "NUNCA uses markdown, títulos, bullets ni numeración. "
                     "Máximo 250 palabras. Termina con una pregunta breve.\n\n"
                     "--- PERFIL Y CONOCIMIENTOS DEL AGENTE (contexto de fondo, no formato) ---\n"
@@ -471,8 +476,9 @@ class WriterTelegramBot:
                 user_prompt = (
                     f"Consulta del usuario: {text}\n\n"
                     f"FUENTES RELEVANTES (usa SOLO esta información):\n{context}\n\n"
-                    "Responde de forma conversacional usando ÚNICAMENTE las fuentes anteriores. "
-                    "Si la respuesta no está en las fuentes, dí honestamente que no tienes esa información."
+                    "Responde de forma conversacional. Usa las fuentes anteriores y las NOTAS DE DOMINIO "
+                    "para interpretar referencias cruzadas. Si la respuesta está en las fuentes, explícala "
+                    "con precisión y cita la norma exacta. Solo si REALMENTE no está, dí que no tienes esa información."
                 )
 
                 content = await self.writer._llm.chat_completion(

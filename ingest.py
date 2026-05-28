@@ -21,6 +21,9 @@ from openai import AsyncOpenAI
 from rich.console import Console
 
 import config
+from critical_relations import get_critical_relations
+from graph_engine import graph as graph_engine
+from graph_extractor import GraphExtractor
 from models import DocumentChunk
 from supabase_client import supabase
 
@@ -395,6 +398,20 @@ class IngestionPipeline:
 
     def __init__(self) -> None:
         self.embedder = EmbeddingGenerator()
+        self._graph_extractor = GraphExtractor()
+        # Insertar relaciones críticas hardcodeadas al iniciar
+        self._init_critical_relations()
+
+    def _init_critical_relations(self) -> None:
+        """Inserta las relaciones críticas conocidas en el grafo."""
+        relations = get_critical_relations()
+        if relations:
+            try:
+                import asyncio
+                asyncio.create_task(graph_engine.insert_relations(relations))
+                console.print("[dim]🔗 Relaciones críticas del grafo inicializadas[/dim]")
+            except Exception:
+                pass  # Si el grafo no está listo, se intentará más tarde
 
     async def ingest_jurisprudencia_judicial(self, base_dir: Path | None = None) -> int:
         """Ingesta todos los .md de jurisprudencia judicial."""
@@ -524,6 +541,23 @@ class IngestionPipeline:
                 console.print(f"[green]  ✓ Batch {i//self.EMBEDDING_BATCH_SIZE + 1}: {len(deduplicated_records)} chunks[/green]")
             except Exception as e:
                 console.print(f"[red]  ✗ Error en batch {i//self.EMBEDDING_BATCH_SIZE + 1}: {e}[/red]")
+
+        # ── GraphRAG: extraer relaciones de los chunks nuevos ──
+        if new_chunks:
+            await self._extract_graph_relations(new_chunks)
+
+    async def _extract_graph_relations(self, chunks: list[DocumentChunk]) -> None:
+        """Extrae relaciones legales automáticamente e inserta en knowledge_graph."""
+        console.print(f"[blue]🕸️  Extrayendo relaciones del grafo para {len(chunks)} chunks...[/blue]")
+        try:
+            relations = await self._graph_extractor.extract_relations_batch(chunks)
+            if relations:
+                inserted = await graph_engine.insert_relations(relations)
+                console.print(f"[green]  ✓ {inserted} relaciones insertadas en knowledge_graph[/green]")
+            else:
+                console.print("[dim]  ⏭️  No se encontraron relaciones nuevas[/dim]")
+        except Exception as e:
+            console.print(f"[yellow]  ⚠️ Error extrayendo relaciones: {e}[/yellow]")
 
     async def _get_existing_hashes(self, hashes: list[str]) -> set[str]:
         """Consulta qué content_hash ya existen en la base."""

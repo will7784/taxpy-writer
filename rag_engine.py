@@ -13,6 +13,7 @@ from openai import AsyncOpenAI
 from rich.console import Console
 
 import config
+from graph_engine import graph as graph_engine
 from models import DocumentChunk, SearchResult
 from supabase_client import supabase
 
@@ -418,6 +419,20 @@ class RAGEngine:
                 if uid not in seen:
                     seen.add(uid)
                     vector_results.append(dr)
+
+            # 6. GraphRAG: traer chunks relacionados por el grafo de conocimiento
+            # Si un chunk relevante está conectado a otro (ej: Art. 192 CT menciona Art. 14 D),
+            # traemos ese chunk también para que el LLM pueda cruzar leyes.
+            graph_uids = graph_engine.expand_results(
+                [r.chunk.chunk_uid for r in vector_results],
+                top_n=5,
+            )
+            for uid in graph_uids:
+                if uid not in seen:
+                    chunk = await graph_engine.get_chunk_by_uid(uid)
+                    if chunk:
+                        seen.add(uid)
+                        vector_results.append(SearchResult(chunk=chunk, similarity=0.82))
 
             # Reordenar por similitud descendente
             vector_results.sort(key=lambda x: x.similarity, reverse=True)

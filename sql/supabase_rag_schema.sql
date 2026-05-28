@@ -208,6 +208,23 @@ alter table public.organization_documents enable row level security;
 alter table public.document_chunks enable row level security;
 alter table public.usage_logs enable row level security;
 
+-- ============================================
+-- Tabla: grafo de conocimiento (GraphRAG)
+-- ============================================
+create table if not exists public.knowledge_graph (
+  id bigserial primary key,
+  source_chunk_uid text not null,
+  target_chunk_uid text not null,
+  relation_type text not null,
+  confidence float not null default 1.0,
+  extracted_by text not null default 'llm',
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_kg_source on knowledge_graph(source_chunk_uid);
+create index if not exists idx_kg_target on knowledge_graph(target_chunk_uid);
+create index if not exists idx_kg_type on knowledge_graph(relation_type);
+
 -- Política: document_chunks visibles para todos (docs públicos) + docs de la org
 -- Nota: las políticas RLS con vector requieren cuidado; para el bot usamos service key
 -- así que estas políticas son más para el dashboard web con anon key.

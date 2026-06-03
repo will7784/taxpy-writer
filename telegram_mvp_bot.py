@@ -29,6 +29,7 @@ import exporter
 from rag_engine import rag as rag_engine
 from settings_store import store as settings_store
 from voice_processor import VoiceProcessor
+from citation_guardrail import guardrail_check
 from writer import WriterEngine, _load_agent_md
 
 console = Console()
@@ -457,7 +458,12 @@ class WriterTelegramBot:
                 system = (
                     "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL, "
                     "como si estuvieras hablando por teléfono con un colega.\n\n"
-                    "REGLA ABSOLUTA: Usa ÚNICAMENTE la información de las FUENTES proporcionadas abajo. "
+                    "REGLA ABSOLUTA #1 (CITAS): Cada afirmación de derecho DEBE ir acompañada de su cita exacta "
+                    "entre paréntesis, usando el formato: '(Art. XX del [Cuerpo Legal])'. "
+                    "Ejemplo: 'los gastos de representación son rechazados (Art. 21 de la Ley sobre Impuesto a la Renta, DL-824)'. "
+                    "NO cites de memoria. Si no estás 100% seguro del número de artículo, NO lo inventes. "
+                    "Usa SOLO los artículos, leyes y normas que aparezcan en las FUENTES proporcionadas.\n\n"
+                    "REGLA ABSOLUTA #2 (FUENTES): Usa ÚNICAMENTE la información de las FUENTES proporcionadas abajo. "
                     "NO inventes artículos, leyes, decretos, oficios, circulares ni jurisprudencia que no "
                     "aparezcan en las fuentes.\n\n"
                     "REGLA DE INTERPRETACIÓN: Si las fuentes contienen la respuesta —incluso usando "
@@ -478,7 +484,8 @@ class WriterTelegramBot:
                     f"FUENTES RELEVANTES (usa SOLO esta información):\n{context}\n\n"
                     "Responde de forma conversacional. Usa las fuentes anteriores y las NOTAS DE DOMINIO "
                     "para interpretar referencias cruzadas. Si la respuesta está en las fuentes, explícala "
-                    "con precisión y cita la norma exacta. Solo si REALMENTE no está, dí que no tienes esa información."
+                    "con precisión y cita la norma exacta entre paréntesis. Solo si REALMENTE no está, "
+                    "dí que no tienes esa información en tus fuentes indexadas."
                 )
 
                 content = await self.writer._llm.chat_completion(
@@ -486,10 +493,16 @@ class WriterTelegramBot:
                         {"role": "system", "content": system},
                         {"role": "user", "content": user_prompt},
                     ],
-                    temperature=0.7,
+                    temperature=0.1,
                     max_tokens=800,
                 )
                 content = content.strip()
+
+                # Guardrail: verificar que las citas existan en el contexto
+                try:
+                    content = guardrail_check(context, content)
+                except Exception as e:
+                    console.print(f"[yellow]⚠️ Guardrail falló (no crítico): {e}[/yellow]")
 
         except Exception as e:
             console.print(f"[red]RAG chat error: {e}[/red]")

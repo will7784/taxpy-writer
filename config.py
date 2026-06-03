@@ -49,7 +49,7 @@ if not NOTEBOOKLM_AUTH_JSON and _auth_file.exists():
 # Writer
 # ============================================
 WRITER_MAX_TOKENS = int(os.getenv("WRITER_MAX_TOKENS", "8000"))
-WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.5"))
+WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.2"))
 
 # ============================================
 # Paths

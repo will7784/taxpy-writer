@@ -172,9 +172,9 @@ class RAGEngine:
         try:
             response = supabase.table("document_chunks").select("*").eq("source_type", "ley").execute()
             self._law_cache = [DocumentChunk.from_db_row(r) for r in response.data]
-            console.print(f"[dim]📚 Caché de leyes cargada: {len(self._law_cache)} chunks[/dim]")
+            console.print(f"[dim][LAW CACHE] Cargada: {len(self._law_cache)} chunks[/dim]")
         except Exception as e:
-            console.print(f"[yellow]⚠️ No se pudo cargar caché de leyes: {e}[/yellow]")
+            console.print(f"[yellow][WARN] No se pudo cargar cache de leyes: {e}[/yellow]")
             self._law_cache = []
         self._law_cache_loaded = True
 
@@ -316,17 +316,77 @@ class RAGEngine:
         q = query.lower()
         extra: list[SearchResult] = []
 
-        # ── Regla 1: PYME / PRO-PYME + intereses/facilidades/convenios → Art. 192 CT ──
-        # El Art. 192 CT menciona 'artículo 14 letra D' pero NUNCA la palabra 'propyme'.
+        def _force_chunk(uid: str, sim: float = 0.95) -> None:
+            if uid in seen:
+                return
+            for chunk in self._law_cache:
+                if chunk.chunk_uid == uid or chunk.chunk_uid.startswith(f"{uid}_"):
+                    extra.append(SearchResult(chunk=chunk, similarity=sim))
+                    break
+
+        # ── Regla 1: PYME / PRO-PYME + intereses/facilidades/convenios → Art. 192 CT + Art. 14 D LIR ──
         pyme_terms = ["propyme", "pro-pyme", "pyme", "14 letra d", "art. 14 d", "articulo 14 d", "regimen 14 d"]
         interest_terms = ["interes", "convenio", "facilidad", "facilit", "pago", "deuda", "beneficio", "condonacion", "condonación", "cuota", "tesoreria", "plazo"]
         if any(t in q for t in pyme_terms) and any(t in q for t in interest_terms):
-            target_uid = "ley_codigo_tributario_art_192"
-            if target_uid not in seen:
-                for chunk in self._law_cache:
-                    if chunk.chunk_uid == target_uid:
-                        extra.append(SearchResult(chunk=chunk, similarity=0.95))
-                        break
+            _force_chunk("ley_codigo_tributario_art_192")
+            _force_chunk("ley_lir_art_14_d_0")
+        elif any(t in q for t in pyme_terms):
+            # Solo PYME sin intereses: traer Art. 14 D igual
+            _force_chunk("ley_lir_art_14_d_0")
+
+        # ── Regla 2: Gastos rechazados / representación / boletas → Art. 21 LIR ──
+        if any(w in q for w in ["rechazado", "rechazados", "rechazar", "gasto", "gastos"]) or any(t in q for t in ["representación", "boleta", "honorario", "arriendo", "contribuciones", "seguro"]):
+            _force_chunk("ley_lir_art_21")
+
+        # ── Regla 3: Depreciación / activo fijo / useful life → Art. 31 LIR ──
+        if any(w in q for w in ["depreciaci", "depreciar", "depreciación"]) or any(t in q for t in ["activo fijo", "vida útil", "vida util", "amortizaci", "bien de uso", "maquinaria"]):
+            _force_chunk("ley_lir_art_31")
+
+        # ── Regla 4: Créditos / crédito fiscal / devolución → Art. 33 bis LIR ──
+        if any(t in q for t in ["crédito fiscal", "credito fiscal", "devolución de impuesto", "devolucion de impuesto", "exceso de pago", "retención en exceso"]):
+            _force_chunk("ley_lir_art_33_bis")
+
+        # ── Regla 5: Renta presunta / renta deudora / debito → Art. 20 LIR ──
+        if any(t in q for t in ["renta presunta", "renta deudora", "renta débito", "renta debito", "presunta", "determinación de oficio"]):
+            _force_chunk("ley_lir_art_20")
+
+        # ── Regla 6: Citación SII / fiscalización / requerimiento → Art. 63 CT ──
+        if any(t in q for t in ["citación", "citacion", "fiscalizaci", "requerimiento", "ordena", "investigación", "sii"]):
+            _force_chunk("ley_codigo_tributario_art_63")
+
+        # ── Regla 7: Liquidación / giro / determinación → Art. 64 CT ──
+        if any(t in q for t in ["liquidación", "liquidacion", "giro", "determinación", "determinacion", "oficio de liquidación"]):
+            _force_chunk("ley_codigo_tributario_art_64")
+
+        # ── Regla 8: Prescripción / caducidad / plazo → Art. 200-201 CT ──
+        if any(t in q for t in ["prescripción", "prescripcion", "caducidad", "plazo para reclamar", "prescribe", "tres años", "6 años"]):
+            _force_chunk("ley_codigo_tributario_art_200")
+            _force_chunk("ley_codigo_tributario_art_201")
+
+        # ── Regla 9: Infracciones / multa / sanción → Art. 97 CT ──
+        if any(t in q for t in ["infracci", "multa", "sanción", "sancion", "pena", "delito tributario"]):
+            _force_chunk("ley_codigo_tributario_art_97")
+
+        # ── Regla 10: IVA débito / crédito fiscal → Art. 11 y 12 DL-825 ──
+        if any(t in q for t in ["débito fiscal", "debito fiscal", "crédito fiscal", "credito fiscal", "iva", "valor agregado"]):
+            _force_chunk("ley_iva_art_11")
+            _force_chunk("ley_iva_art_12")
+
+        # ── Regla 11: Retención de IVA → Art. 74 DL-825 ──
+        if any(t in q for t in ["retención de iva", "retencion de iva", "retenido", "retener iva"]):
+            _force_chunk("ley_iva_art_74")
+
+        # ── Regla 12: Condonación de intereses / rebaja → Art. 56 CT ──
+        if any(t in q for t in ["condonación", "condonacion", "rebaja de interes", "rebaja de intereses", "condonar"]):
+            _force_chunk("ley_codigo_tributario_art_56")
+
+        # ── Regla 13: Régimen simplificado / 14 letra E / microempresa → Art. 14 E LIR ──
+        if any(t in q for t in ["14 letra e", "art. 14 e", "regimen simplificado", "microempresa", "contabilidad simplificada"]):
+            _force_chunk("ley_lir_art_14_e")
+
+        # ── Regla 14: Dividendos / retiro / distribución utilidades → Art. 17 LIR ──
+        if any(t in q for t in ["dividendo", "retiro", "distribución de utilidades", "distribucion de utilidades", "remesa de utilidades"]):
+            _force_chunk("ley_lir_art_17")
 
         return extra
 
@@ -420,7 +480,19 @@ class RAGEngine:
                     seen.add(uid)
                     vector_results.append(dr)
 
-            # 6. GraphRAG: traer chunks relacionados por el grafo de conocimiento
+            # 6. Parent resolution: si un resultado es sub-chunk, traer el padre para contexto completo
+            parent_uids: set[str] = set()
+            for r in vector_results:
+                if r.chunk.parent_chunk_uid:
+                    parent_uids.add(r.chunk.parent_chunk_uid)
+            for p_uid in parent_uids:
+                if p_uid not in seen:
+                    chunk = await graph_engine.get_chunk_by_uid(p_uid)
+                    if chunk:
+                        seen.add(p_uid)
+                        vector_results.append(SearchResult(chunk=chunk, similarity=0.75))
+
+            # 7. GraphRAG: traer chunks relacionados por el grafo de conocimiento
             # Si un chunk relevante está conectado a otro (ej: Art. 192 CT menciona Art. 14 D),
             # traemos ese chunk también para que el LLM pueda cruzar leyes.
             graph_uids = graph_engine.expand_results(
@@ -527,6 +599,36 @@ class RAGEngine:
             domain_notes.append(
                 "El Art. 192 del Código Tributario (DL-830) establece beneficios específicos para PRO-PYME: "
                 "no se aplican intereses sobre cuotas de convenios de hasta 18 meses, y el pago inicial no puede superar el 5% de la deuda."
+            )
+        if any(t in query_lower for t in ["gasto rechazado", "gastos rechazados", "representación", "boleta", "honorario"]):
+            domain_notes.append(
+                "El Art. 21 de la LIR (DL-824) enumera los gastos que son rechazados tributariamente. "
+                "Incluye gastos de representación, boletas de honorarios de ciertos profesionales, arriendos, etc."
+            )
+        if any(t in query_lower for t in ["depreciaci", "activo fijo", "vida útil"]):
+            domain_notes.append(
+                "El Art. 31 N°5 de la LIR (DL-824) regula la depreciación de bienes de activo fijo. "
+                "Establece los porcentajes máximos de depreciación anual según el tipo de bien."
+            )
+        if any(t in query_lower for t in ["citación", "citacion", "fiscalizaci", "requerimiento"]):
+            domain_notes.append(
+                "El Art. 63 del Código Tributario (DL-830) regula la citación del SII para fiscalizar. "
+                "El Art. 64 regula la liquidación y giro de oficio."
+            )
+        if any(t in query_lower for t in ["prescripción", "prescripcion", "caducidad", "plazo para reclamar"]):
+            domain_notes.append(
+                "Los Art. 200 y 201 del Código Tributario (DL-830) regulan la prescripción de la acción tributaria. "
+                "Generalmente el plazo es de 3 años desde la fecha de vencimiento de la obligación, o 6 años en ciertos casos."
+            )
+        if any(t in query_lower for t in ["iva", "débito fiscal", "crédito fiscal", "debito fiscal", "credito fiscal"]):
+            domain_notes.append(
+                "El IVA está regulado por el DL-825. El Art. 11 regula el débito fiscal y el Art. 12 el crédito fiscal. "
+                "La retención de IVA está en el Art. 74."
+            )
+        if any(t in query_lower for t in ["dividendo", "retiro", "distribución de utilidades"]):
+            domain_notes.append(
+                "El Art. 17 de la LIR (DL-824) regula la tributación de dividendos y retiros de utilidades. "
+                "Desde la reforma tributaria 2014, los dividendos se gravan con el Impuesto Global Complementario o Adicional."
             )
 
         if domain_notes:

@@ -48,7 +48,7 @@ class LLMClient:
         *,
         model: str | None = None,
         messages: list[dict[str, str]],
-        temperature: float = 0.7,
+        temperature: float = 0.1,
         max_tokens: int = 2000,
     ) -> str:
         """Genera una respuesta de chat dada una lista de mensajes OpenAI-style."""

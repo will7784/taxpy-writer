@@ -19,6 +19,7 @@ from rich.console import Console
 import config
 from notebooklm_manager import NotebookLMManager
 from rag_engine import rag as rag_engine
+from citation_guardrail import guardrail_check
 from settings_store import store as settings_store
 
 console = Console()
@@ -298,7 +299,15 @@ class WriterEngine:
             temperature=config.WRITER_TEMPERATURE,
             max_tokens=config.WRITER_MAX_TOKENS,
         )
-        return content.strip()
+        content = content.strip()
+
+        # Guardrail: verificar citas legales contra el contexto de fuentes
+        try:
+            content = guardrail_check(research_ctx, content)
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Guardrail falló (no crítico): {e}[/yellow]")
+
+        return content
 
     async def _research_legacy(self, topic: str) -> str:
         """Fallback: investiga en NotebookLM (deprecated)."""

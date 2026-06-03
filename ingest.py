@@ -294,6 +294,125 @@ class PDFLawParser:
         num = re.sub(r"[°º\.\-]+$", "", num)
         return num.lower()
 
+    # Regex para detectar incisos/letras/números dentro de un artículo
+    _INCISO_RE = re.compile(
+        r"(?:^|\n)\s*"
+        r"(?:"
+        r"[a-z]\)"           # a) b) c)
+        r"|[a-z]\."          # a. b. c.
+        r"|\d+\)"            # 1) 2) 3)
+        r"|\d+\."            # 1. 2. 3.
+        r"|[ivxlc]+\)"       # i) ii) iii) (romanos)
+        r"|[IVXLC]+\."      # I. II. III.
+        r")",
+        re.VERBOSE | re.MULTILINE,
+    )
+
+    @staticmethod
+    def _split_article_subchunks(article_text: str, header: str, base_uid: str, law_tag: str, filepath: Path, article_num: str, chunk_index: int) -> list[DocumentChunk]:
+        """Divide un artículo largo en sub-chunks por incisos para embeddings más precisos."""
+        subchunks: list[DocumentChunk] = []
+        # Primero, crear el chunk PADRE con el artículo completo
+        parent_uid = base_uid
+        content_hash = hashlib.sha256(article_text.encode()).hexdigest()
+        subchunks.append(DocumentChunk(
+            chunk_uid=parent_uid,
+            source_path=str(filepath),
+            filename=filepath.name,
+            source_type="ley",
+            law_tag=law_tag,
+            hierarchy_path=f"{law_tag}/art_{article_num}",
+            section_level_name=header,
+            content=article_text,
+            content_hash=content_hash,
+            metadata={
+                "tipo": "ley",
+                "articulo": article_num,
+                "articulo_header": header,
+                "filename": filepath.name,
+                "chunk_role": "parent",
+            },
+            chunk_index=chunk_index,
+            total_chunks=1,
+        ))
+
+        # Si el artículo es corto, no crear sub-chunks
+        if len(article_text) < 3500:
+            return subchunks
+
+        # Detectar incisos
+        inciso_matches = list(PDFLawParser._INCISO_RE.finditer(article_text))
+        if len(inciso_matches) < 2:
+            # No hay estructura de incisos clara: usar sliding window
+            window_size = 3000
+            overlap = 500
+            start_positions = list(range(0, len(article_text), window_size - overlap))
+            for idx, pos in enumerate(start_positions):
+                window_text = article_text[pos:pos + window_size]
+                if len(window_text.strip()) < 100:
+                    continue
+                sub_text = f"{header}\n{window_text.strip()}"
+                sub_uid = f"{base_uid}_sub_{idx}"
+                sub_hash = hashlib.sha256(sub_text.encode()).hexdigest()
+                subchunks.append(DocumentChunk(
+                    chunk_uid=sub_uid,
+                    source_path=str(filepath),
+                    filename=filepath.name,
+                    source_type="ley",
+                    law_tag=law_tag,
+                    hierarchy_path=f"{law_tag}/art_{article_num}",
+                    section_level_name=header,
+                    content=sub_text,
+                    content_hash=sub_hash,
+                    parent_chunk_uid=parent_uid,
+                    metadata={
+                        "tipo": "ley",
+                        "articulo": article_num,
+                        "articulo_header": header,
+                        "filename": filepath.name,
+                        "chunk_role": "sub_window",
+                    },
+                    chunk_index=idx,
+                    total_chunks=len(start_positions),
+                ))
+            return subchunks
+
+        # Dividir por incisos detectados
+        for idx, inc_match in enumerate(inciso_matches):
+            start = inc_match.start()
+            end = inciso_matches[idx + 1].start() if idx + 1 < len(inciso_matches) else len(article_text)
+            inciso_text = article_text[start:end].strip()
+            if len(inciso_text) < 20:
+                continue
+            # Prepend el header del artículo para que el embedding tenga contexto
+            sub_text = f"{header}\n{inciso_text}"
+            sub_uid = f"{base_uid}_sub_{idx}"
+            sub_hash = hashlib.sha256(sub_text.encode()).hexdigest()
+            subchunks.append(DocumentChunk(
+                chunk_uid=sub_uid,
+                source_path=str(filepath),
+                filename=filepath.name,
+                source_type="ley",
+                law_tag=law_tag,
+                hierarchy_path=f"{law_tag}/art_{article_num}",
+                section_level_name=header,
+                content=sub_text,
+                content_hash=sub_hash,
+                parent_chunk_uid=parent_uid,
+                metadata={
+                    "tipo": "ley",
+                    "articulo": article_num,
+                    "articulo_header": header,
+                    "filename": filepath.name,
+                    "chunk_role": "sub_inciso",
+                    "inciso_idx": idx,
+                },
+                chunk_index=idx,
+                total_chunks=len(inciso_matches),
+            ))
+
+        return subchunks
+
     @staticmethod
     def parse(filepath: Path) -> list[DocumentChunk]:
         try:
@@ -357,27 +476,17 @@ class PDFLawParser:
             occurrence_counter[base_uid] = occ + 1
             chunk_uid = f"{base_uid}_{occ}" if occ > 0 else base_uid
 
-            content_hash = hashlib.sha256(article_text.encode()).hexdigest()
-
-            chunks.append(DocumentChunk(
-                chunk_uid=chunk_uid,
-                source_path=str(filepath),
-                filename=filepath.name,
-                source_type="ley",
+            # ── Chunking jerárquico: artículo completo + sub-chunks ──
+            article_chunks = PDFLawParser._split_article_subchunks(
+                article_text=article_text,
+                header=header,
+                base_uid=chunk_uid,
                 law_tag=law_tag,
-                hierarchy_path=f"{law_tag}/art_{article_num}",
-                section_level_name=header,
-                content=article_text,
-                content_hash=content_hash,
-                metadata={
-                    "tipo": "ley",
-                    "articulo": article_num,
-                    "articulo_header": header,
-                    "filename": filepath.name,
-                },
+                filepath=filepath,
+                article_num=article_num,
                 chunk_index=i,
-                total_chunks=len(matches),
-            ))
+            )
+            chunks.extend(article_chunks)
 
         return chunks
 

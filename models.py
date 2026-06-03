@@ -26,6 +26,7 @@ class DocumentChunk:
     metadata: dict[str, Any] = field(default_factory=dict)
     is_derogada: bool = False
     organization_id: str | None = None
+    parent_chunk_uid: str | None = None
     chunk_index: int = 0
     total_chunks: int = 1
     created_at: datetime | None = None
@@ -46,6 +47,7 @@ class DocumentChunk:
             "content_hash": self.content_hash,
             "is_derogada": self.is_derogada,
             "organization_id": self.organization_id,
+            "parent_chunk_uid": self.parent_chunk_uid,
             "chunk_index": self.chunk_index,
             "total_chunks": self.total_chunks,
         }
@@ -66,6 +68,7 @@ class DocumentChunk:
             metadata=row.get("metadata", {}),
             is_derogada=row.get("is_derogada", False),
             organization_id=row.get("organization_id"),
+            parent_chunk_uid=row.get("parent_chunk_uid"),
             chunk_index=row.get("chunk_index", 0),
             total_chunks=row.get("total_chunks", 1),
             created_at=row.get("created_at"),

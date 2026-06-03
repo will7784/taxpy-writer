@@ -31,7 +31,7 @@ class GraphEngine:
             self._table_exists = True
         except Exception:
             self._table_exists = False
-            console.print("[yellow]⚠️ Tabla knowledge_graph no existe. GraphRAG desactivado. "
+            console.print("[yellow][WARN] Tabla knowledge_graph no existe. GraphRAG desactivado. "
                           "Ejecuta el SQL en supabase_rag_schema.sql para crearla.[/yellow]")
         return self._table_exists
 
@@ -57,7 +57,7 @@ class GraphEngine:
             supabase.table("knowledge_graph").upsert(unique, on_conflict="source_chunk_uid,target_chunk_uid,relation_type").execute()
             return len(unique)
         except Exception as e:
-            console.print(f"[yellow]⚠️ Error insertando relaciones: {e}[/yellow]")
+            console.print(f"[yellow][WARN] Error insertando relaciones: {e}[/yellow]")
             return 0
 
     def get_neighbors(
@@ -87,6 +87,7 @@ class GraphEngine:
             next_level: set[str] = set()
             for uid in current_level:
                 try:
+                    # Intento 1: búsqueda exacta del UID
                     query = (
                         supabase.table("knowledge_graph")
                         .select("target_chunk_uid, source_chunk_uid")
@@ -96,6 +97,17 @@ class GraphEngine:
                         query = query.in_("relation_type", relation_types)
                     response = query.limit(max_per_level).execute()
 
+                    # Intento 2: búsqueda por prefijo (para sub-chunks)
+                    if not response.data:
+                        response = (
+                            supabase.table("knowledge_graph")
+                            .select("target_chunk_uid, source_chunk_uid")
+                            .or_(f"source_chunk_uid.like.{uid}_%,target_chunk_uid.like.{uid}_%")
+                        )
+                        if relation_types:
+                            response = response.in_("relation_type", relation_types)
+                        response = response.limit(max_per_level).execute()
+
                     for row in response.data:
                         neighbor = row["target_chunk_uid"] if row["source_chunk_uid"] == uid else row["source_chunk_uid"]
                         if neighbor not in visited:
@@ -103,7 +115,7 @@ class GraphEngine:
                             next_level.add(neighbor)
                             result.append(neighbor)
                 except Exception as e:
-                    console.print(f"[yellow]⚠️ Error navegando grafo desde {uid}: {e}[/yellow]")
+                    console.print(f"[yellow][WARN] Error navegando grafo desde {uid}: {e}[/yellow]")
                     continue
             current_level = next_level
             if not current_level:
@@ -138,13 +150,29 @@ class GraphEngine:
         return [uid for uid, _ in sorted_neighbors[:top_n]]
 
     async def get_chunk_by_uid(self, chunk_uid: str) -> DocumentChunk | None:
-        """Recupera un chunk desde Supabase por su UID."""
+        """Recupera un chunk desde Supabase por su UID.
+
+        Si no encuentra exacto, busca por prefijo (útil para sub-chunks
+        cuando la relación apunta al artículo padre).
+        """
         try:
+            # Intento 1: búsqueda exacta
             response = supabase.table("document_chunks").select("*").eq("chunk_uid", chunk_uid).limit(1).execute()
             if response.data:
                 return DocumentChunk.from_db_row(response.data[0])
+
+            # Intento 2: búsqueda por prefijo (ley_lir_art_21 → ley_lir_art_21_sub_0)
+            response = (
+                supabase.table("document_chunks")
+                .select("*")
+                .like("chunk_uid", f"{chunk_uid}_%")
+                .limit(1)
+                .execute()
+            )
+            if response.data:
+                return DocumentChunk.from_db_row(response.data[0])
         except Exception as e:
-            console.print(f"[yellow]⚠️ Error cargando chunk {chunk_uid}: {e}[/yellow]")
+            console.print(f"[yellow][WARN] Error cargando chunk {chunk_uid}: {e}[/yellow]")
         return None
 
 

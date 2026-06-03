@@ -99,6 +99,7 @@ create table if not exists public.document_chunks (
   is_derogada boolean not null default false,
   embedding vector(1536) not null,
   organization_id uuid null references public.organizations(id) on delete cascade,
+  parent_chunk_uid text null,
   chunk_index int not null default 0,
   total_chunks int not null default 1,
   created_at timestamptz not null default now(),

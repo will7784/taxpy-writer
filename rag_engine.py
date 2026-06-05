@@ -158,6 +158,12 @@ class RAGEngine:
         "iva_ley": ["dl_825", "dl-825"],
         "articulo": ["articulo", "artículo"],
         "artículo": ["articulo", "artículo"],
+        "reinversión": ["reinversion", "reinvertir", "retiro para reinvertir", "reinvertido"],
+        "reinversion": ["reinversion", "reinvertir", "retiro para reinvertir", "reinvertido"],
+        "reinvertir": ["reinversion", "reinvertir", "retiro para reinvertir", "reinvertido"],
+        "inmueble": ["inmueble", "bien raiz", "bien raíz", "enajenación", "enajenacion", "vender casa", "vender departamento", "venta de propiedad"],
+        "enajenación": ["enajenación", "enajenacion", "inmueble", "bien raiz", "bien raíz", "vender casa"],
+        "persona_natural": ["persona natural", "contribuyente natural", "particular"],
     }
 
     def __init__(self) -> None:
@@ -383,6 +389,24 @@ class RAGEngine:
         # ── Regla 13: Régimen simplificado / 14 letra E / microempresa → Art. 14 E LIR ──
         if any(t in q for t in ["14 letra e", "art. 14 e", "regimen simplificado", "microempresa", "contabilidad simplificada"]):
             _force_chunk("ley_lir_art_14_e")
+
+        # ── Regla 13b: Reinversión de utilidades → NOTA: derogado en reforma 2014 ──
+        # El Art. 14 A N° 1 letra c) sobre reinversión fue derogado por Ley 20.780/2014.
+        # Ahora los retiros se gravan con impuestos finales sin exención por reinversión.
+        # Solo se mantiene histórico en jurisprudencias previas a 2014.
+        if any(t in q for t in ["reinversión", "reinversion", "reinvertir", "reinvertido", "retiro para reinvertir", "franquicia tributaria", "aumento efectivo de capital"]):
+            # No forzar chunk de ley vigente porque la norma fue derogada
+            pass
+
+        # ── Regla 13b-alt: Beneficio del 50% reinvertido → Art. 14 E LIR (microempresas) ──
+        if any(t in q for t in ["50% reinvertido", "rebaja base imponible", "rebajar base imponible", "deducción renta líquida", "deduccion renta liquida", "incentivo al ahorro"]):
+            _force_chunk("ley_lir_art_14_e_0")
+
+        # ── Regla 13c: Venta de inmueble / persona natural / bien raíz → Art. 17 N° 8 LIR ──
+        if any(t in q for t in ["inmueble", "bien raiz", "bien raíz", "vender casa", "vender departamento", "venta de propiedad", "enajenación de bienes raíces", "enajenacion de bienes raices", "ganancia de capital", "plusvalia", "plusvalía"]):
+            _force_chunk("ley_lir_art_17_n8")
+        if any(t in q for t in ["persona natural", "contribuyente natural"]) and any(t in q for t in ["inmueble", "bien raiz", "bien raíz", "vender", "venta", "casa", "departamento"]):
+            _force_chunk("ley_lir_art_17_n8")
 
         # ── Regla 14: Dividendos / retiro / distribución utilidades → Art. 17 LIR ──
         if any(t in q for t in ["dividendo", "retiro", "distribución de utilidades", "distribucion de utilidades", "remesa de utilidades"]):
@@ -629,6 +653,25 @@ class RAGEngine:
             domain_notes.append(
                 "El Art. 17 de la LIR (DL-824) regula la tributación de dividendos y retiros de utilidades. "
                 "Desde la reforma tributaria 2014, los dividendos se gravan con el Impuesto Global Complementario o Adicional."
+            )
+        if any(t in query_lower for t in ["reinversión", "reinversion", "reinvertir", "retiro para reinvertir"]):
+            domain_notes.append(
+                "IMPORTANTE: El Art. 14 letra A) N° 1 letra c) sobre reinversión de utilidades fue DEROGADO por la Ley 20.780 (reforma tributaria 2014). "
+                "Desde 2014, los retiros de utilidades se gravan con impuestos finales sin exención por reinversión. "
+                "Las jurisprudencias indexadas que mencionan esta norma son históricas (casos anteriores a 2014)."
+            )
+        if any(t in query_lower for t in ["50% reinvertido", "rebaja base imponible", "rebajar base imponible", "deducción renta líquida", "incentivo al ahorro"]):
+            domain_notes.append(
+                "El Art. 14 letra E de la LIR (DL-824) establece un incentivo al ahorro para MICROEMPRESAS (ingresos brutos anuales inferiores a 100.000 UF): "
+                "permite deducir de la renta líquida imponible hasta el 50% de la renta líquida imponible que se mantenga invertida en la empresa, "
+                "con un tope máximo de 5.000 UF anuales. Solo aplica a contribuyentes de las letras A) y D) del Art. 14."
+            )
+        if any(t in query_lower for t in ["inmueble", "bien raiz", "bien raíz", "vender casa", "vender departamento", "venta de propiedad", "ganancia de capital", "plusvalia", "plusvalía"]):
+            domain_notes.append(
+                "El Art. 17 N° 8 de la LIR (DL-824) regula la enajenación de bienes raíces por personas naturales. "
+                "La letra b) establece que la parte del mayor valor que no exceda de 8.000 UF es INGRESO NO CONSTITUTIVO DE RENTA (exento). "
+                "Si excede 8.000 UF, el excedente se grava con Impuesto Global Complementario o Adicional, o con un impuesto único sustitutivo del 10% a elección del enajenante. "
+                "El costo tributario incluye el valor de adquisición reajustado más mejoras declaradas ante el SII."
             )
 
         if domain_notes:

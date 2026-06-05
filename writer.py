@@ -54,6 +54,11 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
         "4. Errores comunes que cometen los contribuyentes y cómo evitarlos.\n"
         "5. Ejemplo práctico DESARROLLADO de mínimo 2-3 párrafos con sujetos ficticios, montos, fechas y resultado concreto.\n"
         "6. Tip práctico al final del subcapítulo (\"Para evitar problemas, recuerda que...\").\n"
+        "\n\nREGLA ABSOLUTA DE GROUNDING:\n"
+        "- Solo usa la información de las FUENTES proporcionadas.\n"
+        "- ESTÁS PROHIBIDO de inventar artículos, requisitos, plazos, montos o exenciones.\n"
+        "- NO mezcles normas de otros países (ej: no existe 'exención por vivienda habitual' ni 'periodo mínimo de posesión' para inmuebles en Chile).\n"
+        "- Si la fuente no menciona algo, NO lo menciones tú. Di: 'No tengo esa información en mis fuentes.'\n"
         "\n\nREGLAS DE ESTILO:\n"
         "- Usa formato Markdown (# Capítulo, ## Subcapítulo, ### Apartado).\n"
         "- Cita siempre la norma entre paréntesis después de cada afirmación de derecho.\n"
@@ -70,7 +75,10 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
         "al menos 2 ejemplos prácticos desarrollados con sujetos, hechos y resultado, "
         "y tips prácticos al final de cada sección. "
         "Tono: claro, profesional, accesible para contadores y abogados. "
-        "Usa formato Markdown (# para título, ## para secciones)."
+        "Usa formato Markdown (# para título, ## para secciones).\n\n"
+        "REGLA ABSOLUTA: Solo usa información de las fuentes proporcionadas. "
+        "NO inventes artículos, requisitos, plazos ni exenciones. "
+        "NO mezcles normas de otros países con Chile."
     ),
     "guion": (
         "Eres un experto tributario chileno y guionista de video educativo. "
@@ -119,6 +127,9 @@ _SYSTEM_PROMPTS: dict[ContentType, str] = {
         "Eres ClaudIA, una experta tributaria chilena con un tono amigable, cercano y conversacional. "
         "Respondes como si estuvieras hablando por teléfono con un amigo que te hace una consulta fiscal. "
         "Tu objetivo es que entienda el tema sin sentirse abrumado, manteniendo siempre el sustento legal.\n\n"
+        "REGLA ABSOLUTA: Solo usa información de las fuentes proporcionadas. "
+        "Si algo no está en las fuentes, di 'No tengo esa información en mis fuentes indexadas.' "
+        "NO inventes artículos, requisitos ni exenciones.\n\n"
         "REGLAS DE ESTILO OBLIGATORIAS:\n"
         "- Usa frases CORTAS y directas. Máximo 15-20 palabras por frase.\n"
         "- NUNCA uses markdown: no #, no ##, no negritas, no bullets, no numeración, no listas.\n"
@@ -163,7 +174,8 @@ class WriterEngine:
 
     @staticmethod
     def detect_content_type(prompt: str) -> ContentType:
-        p = prompt.lower().strip()
+        # Normalizar: quitar signos de apertura, espacios, y convertir a minúsculas
+        p = prompt.lower().strip().lstrip("¿¡")
 
         # 1. Detectar conversación casual (saludos, mensajes cortos, preguntas directas)
         conversation_signals = [
@@ -259,6 +271,46 @@ class WriterEngine:
         )
         return content.strip()
 
+    async def _extract_facts(self, research_ctx: str, topic: str) -> str:
+        """
+        Paso intermedio: extrae hechos verificables de las fuentes.
+        Esto fuerza al LLM a leer los chunks ANTES de escribir,
+        reduciendo drásticamente alucinaciones.
+        """
+        system = (
+            "Eres un extractor de hechos legales. Tu trabajo es LEER las fuentes proporcionadas "
+            "y extraer SOLAMENTE los hechos concretos, con sus citas exactas. "
+            "NO inventes nada. Si algo no está en las fuentes, NO lo incluyas.\n\n"
+            "FORMATO DE SALIDA (lista numerada):\n"
+            "1. [HECHO] + [CITA EXACTA: Artículo X, Ley Y, Decreto Z]\n"
+            "2. [HECHO] + [CITA EXACTA]\n"
+            "...\n\n"
+            "REGLAS:\n"
+            "- Incluye montos numéricos exactos (UF, porcentajes, topes).\n"
+            "- Incluye requisitos específicos mencionados en las fuentes.\n"
+            "- Incluye las opciones o alternativas que la norma presente.\n"
+            "- Si una fuente dice 'exento hasta X UF', incluye ese número exacto.\n"
+            "- NO agregues interpretaciones ni conclusiones. Solo hechos brutos de las fuentes."
+        )
+        user_prompt = (
+            f"Tema: {topic}\n\n"
+            f"Fuentes legales (lee cada una y extrae los hechos):\n{research_ctx}\n\n"
+            "Extrae la lista de hechos verificables con sus citas exactas."
+        )
+        try:
+            facts = await self._llm.chat_completion(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.0,
+                max_tokens=2000,
+            )
+            return facts.strip()
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Extracción de hechos falló: {e}[/yellow]")
+            return ""
+
     async def write(
         self,
         topic: str,
@@ -266,21 +318,60 @@ class WriterEngine:
         content_type: ContentType,
         outline: str = "",
     ) -> str:
-        """Genera el contenido completo con GPT-4o."""
+        """Genera el contenido completo con GPT-4o usando extracción de hechos previa."""
+        # ── PASO 1: Extraer hechos verificables de las fuentes ──
+        # Esto es crítico para evitar alucinaciones: forzamos al LLM a leer
+        # los chunks antes de escribir.
+        facts = ""
+        if content_type in ("articulo", "manual", "historia", "conversacion"):
+            console.print(f"  [dim]🔍 Extrayendo hechos de fuentes...[/dim]")
+            facts = await self._extract_facts(research_ctx, topic)
+            if facts:
+                console.print(f"  [dim]✓ {facts.count(chr(10))} hechos extraídos[/dim]")
+
+        # ── PASO 2: Construir prompt con hechos + fuentes originales ──
         system = _SYSTEM_PROMPTS[content_type]
         if self._agent_md:
             system += f"\n\nINSTRUCCIONES ADICIONALES DEL AGENTE:\n{self._agent_md}"
 
+        # Agregar few-shot específico para inmuebles si aplica
+        if any(k in topic.lower() for k in ("inmueble", "bien raiz", "bien raíz", "venta propiedad", "enajenación")):
+            system += (
+                "\n\nEJEMPLO DE RESPUESTA CORRECTA (tema: venta de inmuebles):\n"
+                "'La ganancia de capital obtenida por una persona natural en la enajenación de bienes raíces "
+                "está exenta hasta 8.000 UF, siempre que el bien haya sido adquirido con anterioridad al 1° de enero de 2004 "
+                "o se trate de una enajenación posterior a esa fecha sujeta a las normas transitorias. "
+                "El excedente sobre las 8.000 UF se grava con el IGC o el Impuesto Adicional, "
+                "o bien el contribuyente puede optar por un impuesto único sustitutivo del 10% sobre la ganancia de capital. "
+                "(Artículo 17 N° 8, Ley sobre Impuesto a la Renta, DL-824).'\n\n"
+                "EJEMPLO DE RESPUESTA INCORRECTA (NUNCA hagas esto):\n"
+                "'Existe una exención por vivienda habitual si se ha vivido más de un año en la propiedad.' → "
+                "ESTO ES FALSO EN CHILE. NO existe ese concepto en la LIR.\n\n"
+                "EJEMPLO DE RESPUESTA INCORRECTA (NUNCA hagas esto):\n"
+                "'Debes poseer el inmueble por un periodo mínimo para acceder a la exención.' → "
+                "ESTO ES FALSO EN CHILE. NO existe periodo mínimo de posesión para inmuebles en la LIR.\n\n"
+            )
+
         user_prompt = (
             f"Tema a desarrollar: {topic}\n\n"
+        )
+        if facts:
+            user_prompt += (
+                f"=== HECHOS EXTRAÍDOS DE LAS FUENTES (USAR SOLO ESTO) ===\n{facts}\n"
+                f"=== FIN HECHOS ===\n\n"
+            )
+        user_prompt += (
             f"Información de fuentes (base de conocimiento):\n{research_ctx}\n\n"
         )
         if outline:
             user_prompt += f"Índice aprobado por el usuario:\n{outline}\n\n"
         user_prompt += (
-            "REGLA ABSOLUTA: Solo usa la información de las FUENTES proporcionadas arriba. "
+            "REGLA ABSOLUTA: Solo usa la información de las FUENTES y los HECHOS EXTRAÍDOS arriba. "
             "NO inventes artículos, leyes, decretos, oficios, circulares ni jurisprudencia que no "
             "aparezcan en las fuentes. Cita SIEMPRE la norma exacta con artículo, ley y número de decreto.\n\n"
+            "REGLA CRÍTICA: Si un hecho no está en las fuentes proporcionadas, NO lo menciones. "
+            "NO uses conocimiento general. NO apliques normas de otros países (España, Argentina, etc.) a Chile. "
+            "Si no tienes información en las fuentes para responder algo, di: 'No tengo esa información en mis fuentes.'\n\n"
             "Escribe el contenido COMPLETO, EXTENSO y PROFUNDO siguiendo el índice si existe. "
             "NO te quedes corto. NO resumas. Desarrolla cada punto con máximo detalle. "
             "Usa TODOS los tokens disponibles para entregar el manual más completo posible. "

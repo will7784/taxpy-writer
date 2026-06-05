@@ -71,9 +71,10 @@ class GraphExtractor:
 
     async def extract_relations(self, chunk: DocumentChunk) -> list[dict]:
         """Extrae relaciones de UN chunk."""
-        prompt = _EXTRACTION_PROMPT.format(
-            content=chunk.content[:6000],  # truncar para no exceder tokens
-            chunk_uid=chunk.chunk_uid,
+        prompt = _EXTRACTION_PROMPT.replace(
+            "{content}", chunk.content[:6000]
+        ).replace(
+            "{chunk_uid}", chunk.chunk_uid
         )
 
         try:
@@ -87,7 +88,7 @@ class GraphExtractor:
                 model="gpt-4o-mini",
             )
         except Exception as e:
-            console.print(f"[yellow]⚠️ LLM falló en extracción para {chunk.chunk_uid}: {e}[/yellow]")
+            console.print(f"[yellow]WARN LLM fallo en extraccion para {chunk.chunk_uid}: {e}[/yellow]")
             return []
 
         return self._parse_response(response, chunk.chunk_uid)
@@ -119,13 +120,13 @@ class GraphExtractor:
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
-            console.print(f"[yellow]⚠️ JSON inválido en respuesta del LLM, intentando limpiar...[/yellow]")
+            console.print(f"[yellow]WARN JSON invalido en respuesta del LLM, intentando limpiar...[/yellow]")
             # Limpiar comillas fancy y caracteres extraños
             cleaned = text.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
             try:
                 data = json.loads(cleaned)
             except json.JSONDecodeError:
-                console.print(f"[red]✗ No se pudo parsear JSON del LLM[/red]")
+                console.print(f"[red]FAIL No se pudo parsear JSON del LLM[/red]")
                 return []
 
         relations: list[dict] = []

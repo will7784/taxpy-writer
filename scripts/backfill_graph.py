@@ -28,20 +28,20 @@ BATCH_SIZE = 15
 
 
 async def main() -> None:
-    print("🕸️  Backfill del grafo de conocimiento")
+    print("[GRAPH] Backfill del grafo de conocimiento")
     print("=" * 50)
 
     # 1. Insertar relaciones críticas primero
-    print("\n1️⃣ Insertando relaciones críticas hardcodeadas...")
+    print("\n[1/3] Insertando relaciones críticas hardcodeadas...")
     critical = get_critical_relations()
     inserted = await graph_engine.insert_relations(critical)
-    print(f"   ✓ {inserted} relaciones críticas insertadas")
+    print(f"   OK {inserted} relaciones críticas insertadas")
 
     # 2. Cargar todos los chunks existentes
-    print("\n2️⃣ Cargando chunks existentes...")
+    print("\n[2/3] Cargando chunks existentes...")
     response = supabase.table("document_chunks").select("*").execute()
     rows = response.data
-    print(f"   📚 {len(rows)} chunks encontrados")
+    print(f"   FOUND {len(rows)} chunks encontrados")
 
     # 3. Procesar en batches
     extractor = GraphExtractor()
@@ -51,19 +51,19 @@ async def main() -> None:
         batch_rows = rows[i : i + BATCH_SIZE]
         chunks = [DocumentChunk.from_db_row(r) for r in batch_rows]
 
-        print(f"\n   🔄 Batch {i // BATCH_SIZE + 1}/{(len(rows) + BATCH_SIZE - 1) // BATCH_SIZE} "
+        print(f"\n   BATCH {i // BATCH_SIZE + 1}/{(len(rows) + BATCH_SIZE - 1) // BATCH_SIZE} "
               f"({len(chunks)} chunks)")
 
         relations = await extractor.extract_relations_batch(chunks)
         if relations:
             inserted = await graph_engine.insert_relations(relations)
             total_relations += inserted
-            print(f"   ✓ {inserted} relaciones insertadas (total: {total_relations})")
+            print(f"   OK {inserted} relaciones insertadas (total: {total_relations})")
         else:
-            print(f"   ⏭️  Sin relaciones nuevas")
+            print(f"   SKIP Sin relaciones nuevas")
 
     print("\n" + "=" * 50)
-    print(f"✅ Backfill completado: {total_relations} relaciones totales en knowledge_graph")
+    print(f"[DONE] Backfill completado: {total_relations} relaciones totales en knowledge_graph")
 
 
 if __name__ == "__main__":

@@ -30,6 +30,18 @@ class CitationCheck:
 class CitationGuardrail:
     """Verifica que las citas legales en una respuesta existan en las fuentes."""
 
+    # Conceptos inventados comunes que NO existen en la legislación chilena vigente
+    _HALLUCINATION_PATTERNS: list[tuple[re.Pattern, str]] = [
+        (re.compile(r"exención.*vivienda habitual", re.IGNORECASE), "No existe 'exención por vivienda habitual' en la LIR chilena"),
+        (re.compile(r"vivienda habitual.*exenta", re.IGNORECASE), "No existe exención por vivienda habitual en Chile"),
+        (re.compile(r"periodo mínimo de posesión.*inmueble", re.IGNORECASE), "No existe periodo mínimo de posesión para inmuebles en la LIR"),
+        (re.compile(r"plazo mínimo.*posesión.*bien raíz", re.IGNORECASE), "No existe plazo mínimo de posesión para bienes raíces"),
+        (re.compile(r"reinversión de utilidades.*vigente", re.IGNORECASE), "La reinversión de utilidades (Art. 14 A N° 1 letra c) fue derogada en 2014"),
+        (re.compile(r"retiro para reinvertir.*aplica", re.IGNORECASE), "El retiro para reinvertir fue derogado en 2014"),
+        (re.compile(r"Art\.?\s*14\s*[A-Za-z]*\s*N[°o]?\s*1\s*letra\s*c.*rebaja", re.IGNORECASE), "Art. 14 A N° 1 letra c fue derogado; el 50% está en Art. 14 E"),
+        (re.compile(r"Art\.?\s*17\s*N[°o]?\s*11.*inmueble", re.IGNORECASE), "El Art. 17 N° 11 no existe; la exención de 8.000 UF está en Art. 17 N° 8"),
+    ]
+
     # Patrones para detectar citas legales en español
     _ARTICLE_PATTERNS = [
         re.compile(r"Art[íi]culo\s+(\d+[°\w]*)\s+(?:de\s+la\s+)?(?:Ley\s+(?:sobre\s+)?(?:Impuesto\s+a\s+la\s+)?(?:C[oó]digo\s+)?([\w\s]+))", re.IGNORECASE),
@@ -128,24 +140,42 @@ class CitationGuardrail:
 
         return checks
 
+    def check_hallucinations(self, response_text: str) -> list[str]:
+        """Detecta conceptos inventados que no existen en la legislación chilena."""
+        found: list[str] = []
+        for pattern, message in self._HALLUCINATION_PATTERNS:
+            if pattern.search(response_text):
+                found.append(message)
+        return found
+
     def annotate_response(self, response_text: str) -> str:
-        """Agrega advertencias a la respuesta si hay citas no verificadas."""
+        """Agrega advertencias a la respuesta si hay citas no verificadas o alucinaciones."""
         checks = self.check_response(response_text)
         unverified = [c for c in checks if not c.found_in_context]
+        hallucinations = self.check_hallucinations(response_text)
 
-        if not unverified:
-            return response_text
+        notes: list[str] = []
 
-        # Si hay citas no verificadas, agregar nota al final
-        note = (
-            "\n\n[WARN] Nota de verificacion: No pude confirmar en las fuentes consultadas: "
-            + ", ".join(f"'{c.text}'" for c in unverified[:3])
-        )
-        if len(unverified) > 3:
-            note += f" y {len(unverified) - 3} citas más."
-        note += " Por favor verifica estas citas directamente en la norma."
+        if hallucinations:
+            notes.append(
+                "\n\n[ALERTA] Se detectaron posibles conceptos no vigentes o inexistentes en la legislación chilena: "
+                + "; ".join(hallucinations)
+            )
 
-        return response_text + note
+        if unverified:
+            note = (
+                "\n\n[WARN] No pude confirmar en las fuentes consultadas: "
+                + ", ".join(f"'{c.text}'" for c in unverified[:3])
+            )
+            if len(unverified) > 3:
+                note += f" y {len(unverified) - 3} citas más."
+            note += " Por favor verifica estas citas directamente en la norma."
+            notes.append(note)
+
+        if notes:
+            return response_text + "".join(notes)
+
+        return response_text
 
 
 def guardrail_check(context_text: str, response_text: str) -> str:

@@ -53,11 +53,22 @@ class GraphEngine:
             return 0
 
         try:
-            # Upsert evita duplicados
-            supabase.table("knowledge_graph").upsert(unique, on_conflict="source_chunk_uid,target_chunk_uid,relation_type").execute()
+            # Insert simple (sin upsert porque falta unique constraint en DB)
+            supabase.table("knowledge_graph").insert(unique).execute()
             return len(unique)
         except Exception as e:
-            console.print(f"[yellow][WARN] Error insertando relaciones: {e}[/yellow]")
+            err_msg = str(e)
+            if "23505" in err_msg or "duplicate" in err_msg.lower():
+                # Duplicado: reintentar uno por uno
+                inserted = 0
+                for rel in unique:
+                    try:
+                        supabase.table("knowledge_graph").insert(rel).execute()
+                        inserted += 1
+                    except Exception:
+                        pass
+                return inserted
+            console.print(f"[WARN] Error insertando relaciones: {e}")
             return 0
 
     def get_neighbors(

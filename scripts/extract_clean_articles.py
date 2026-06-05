@@ -179,11 +179,19 @@ def extract_article_14_letters(pdf_path: str) -> dict[str, str]:
                     next_letter_idx = candidate
                     break
 
-        # Tambien buscar ARTICULO 14 BIS o ARTICULO 15
-        for fin_pat in ["ARTICULO 14 BIS", "ARTICULO 15"]:
-            fidx = art14.find(fin_pat, l_start + 20)
-            if fidx > 0 and fidx < next_letter_idx:
-                next_letter_idx = fidx
+        # Tambien buscar ARTICULO 14 BIS/TER/etc. o ARTICULO 15
+        fin_patterns = [
+            r'ARTICULO\s+14[°\u00ba]?\s+BIS',
+            r'ARTICULO\s+14[°\u00ba]?\s+TER',
+            r'ARTICULO\s+14[°\u00ba]?\s+QUATER',
+            r'ARTICULO\s+15',
+        ]
+        for fin_pat in fin_patterns:
+            fm = re.search(fin_pat, art14[l_start + 20:])
+            if fm:
+                fidx = l_start + 20 + fm.start()
+                if fidx < next_letter_idx:
+                    next_letter_idx = fidx
 
         raw = art14[l_start:next_letter_idx]
         cleaned = clean_text(raw)

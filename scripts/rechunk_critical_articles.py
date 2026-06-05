@@ -57,7 +57,7 @@ def extract_article_14_e(full_text: str) -> str:
 
 
 def extract_article_17_n8(full_text: str) -> str:
-    """Extrae el N° 8 del Art. 17 (ganancias de capital / venta de inmuebles)."""
+    """Extrae la letra b) del N° 8 del Art. 17 (ganancias de capital / venta de inmuebles)."""
     idx17 = full_text.find('ARTICULO 17')
     idx18 = full_text.find('ARTICULO 18')
     art17 = full_text[idx17:idx18]
@@ -67,32 +67,27 @@ def extract_article_17_n8(full_text: str) -> str:
     if idx_8000 < 0:
         idx_8000 = art17.find('8.000')
 
-    # Buscar hacia atrás hasta encontrar el inicio del N° 8
-    # El N° 8 trata sobre "mayor valor obtenido en la enajenación"
-    start = 0
-    for i in range(idx_8000, 0, -1):
-        if art17[i:i+20].startswith('    8.') or art17[i:i+20].startswith('   8.'):
-            start = i
-            break
+    # Buscar hacia atrás hasta encontrar el inicio de la letra b)
+    start = art17.rfind('b) Enajenaci', 0, idx_8000)
+    if start < 0:
+        start = 0
 
-    # Si no encontramos, buscar "mayor valor obtenido"
-    if start == 0:
-        idx_mayor = art17.find('mayor valor obtenido')
-        if idx_mayor > 0:
-            # Buscar linea que empiece con numero antes de esto
-            lines_before = art17[:idx_mayor].split('\n')
-            for j in range(len(lines_before) - 1, max(0, len(lines_before) - 20), -1):
-                if lines_before[j].strip().startswith('8.'):
-                    start = len('\n'.join(lines_before[:j]))
-                    break
+    # Buscar hacia adelante el final de la letra b).
+    # No usar '9.' porque las notas al pie contienen 'N° 9' o 'Art. segundo N° 9'.
+    # En su lugar, buscar el siguiente 'c)' que NO sea nota al pie.
+    sub = art17[start:]
+    end = len(sub)
+    import re
+    for m in re.finditer(r'\n\s*c\)', sub[1000:]):
+        pos = m.start() + 1000
+        # Si las líneas anteriores contienen 'Ley ' y 'D.O.', es nota al pie
+        context_before = sub[pos - 200:pos]
+        if 'Ley ' in context_before and 'D.O.' in context_before:
+            continue
+        end = pos
+        break
 
-    # Buscar hacia adelante hasta el N° 9
-    end = len(art17)
-    idx9 = art17.find('9.', start + 50)
-    if idx9 > 0:
-        end = idx9
-
-    return clean_text(art17[start:end].strip())
+    return clean_text(sub[:end].strip())
 
 
 async def embed_text(text: str) -> list[float]:

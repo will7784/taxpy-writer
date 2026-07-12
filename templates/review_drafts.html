@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taxpy Writer — Borradores de árboles</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Taxpy Writer</div>
+        <div class="nav-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/review/drafts" class="active">Árboles</a>
+            <a href="/logout">Salir</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% if message %}
+        <div class="alert alert-success">{{ message }}</div>
+        {% endif %}
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        <div class="card full-width">
+            <h2>🌳 Borradores de árboles de decisión</h2>
+            <p class="hint">
+                Generados con <code>python scripts/draft_tree_cli.py --chunk-uid ...</code>.
+                El LLM propone, tú apruebas — "Aprobar" solo publica si el árbol carga
+                correctamente en <code>decision_engine.py</code>.
+            </p>
+            {% if drafts %}
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Título</th>
+                        <th>Artículo</th>
+                        <th>Nodos</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for d in drafts %}
+                    <tr>
+                        <td>{{ d.title }}</td>
+                        <td>{{ d.article }}</td>
+                        <td>{{ d.node_count }}</td>
+                        <td>
+                            <a href="/review/drafts/{{ d.tree_id }}" class="btn btn-sm btn-outline">Revisar</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="empty">No hay borradores pendientes de revisión.</p>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

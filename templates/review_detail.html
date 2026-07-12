@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Taxpy Writer — Revisar {{ tree_id }}</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">🤖 Taxpy Writer</div>
+        <div class="nav-links">
+            <a href="/dashboard">Dashboard</a>
+            <a href="/review/drafts" class="active">Árboles</a>
+            <a href="/logout">Salir</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        {% if error %}
+        <div class="alert alert-error">{{ error }}</div>
+        {% endif %}
+
+        <div class="card full-width">
+            <h2>🌳 {{ tree_id }}</h2>
+            <p class="hint">
+                Revisa el diagrama y el JSON. Guarda tus ediciones antes de aprobar —
+                "Aprobar" valida que el árbol cargue en <code>decision_engine.py</code>
+                y recién ahí lo mueve a <code>decision_trees/codigo_tributario/</code>.
+            </p>
+
+            {% if mermaid %}
+            <div class="mermaid">
+{{ mermaid }}
+            </div>
+            {% else %}
+            <p class="empty">No se pudo generar el diagrama (revisa que el JSON sea válido).</p>
+            {% endif %}
+        </div>
+
+        <div class="card full-width">
+            <h2>📝 JSON del árbol</h2>
+            <form method="post" action="/review/drafts/{{ tree_id }}/save">
+                <div class="form-group">
+                    <textarea name="raw_json" rows="24" style="width:100%; font-family: monospace; font-size: 0.85rem;">{{ raw_json }}</textarea>
+                </div>
+                <button type="submit" class="btn btn-outline">Guardar cambios</button>
+            </form>
+        </div>
+
+        <div class="card full-width">
+            <form method="post" action="/review/drafts/{{ tree_id }}/approve" style="display:inline;">
+                <button type="submit" class="btn btn-primary" onclick="return confirm('¿Aprobar y publicar este árbol?');">
+                    ✅ Aprobar y publicar
+                </button>
+            </form>
+            <form method="post" action="/review/drafts/{{ tree_id }}/discard" style="display:inline;">
+                <button type="submit" class="btn btn-outline" onclick="return confirm('¿Descartar este borrador?');">
+                    🗑️ Descartar
+                </button>
+            </form>
+            <a href="/review/drafts" class="btn btn-outline">← Volver</a>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>
+</body>
+</html>

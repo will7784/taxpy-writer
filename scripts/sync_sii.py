@@ -6,6 +6,11 @@ Uso:
     python scripts/sync_sii.py --incremental   # Solo novedades (default)
     python scripts/sync_sii.py --circulares    # Solo circulares
     python scripts/sync_sii.py --acj           # Solo jurisprudencia judicial
+
+Este script solo escribe los .md nuevos en documents/jurisprudencia_sii/ y
+documents/jurisprudencia_sii_circulares/. Para subirlos a Supabase (embeddings
++ dedupe por content_hash), correr después:
+    python scripts/ingest_cli.py --jurisprudencia --circulares
 """
 
 from __future__ import annotations

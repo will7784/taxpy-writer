@@ -24,6 +24,7 @@ import config
 from critical_relations import get_critical_relations
 from graph_engine import graph as graph_engine
 from graph_extractor import GraphExtractor
+from legal_parser import parser as legal_parser
 from models import DocumentChunk
 from supabase_client import supabase
 
@@ -243,175 +244,13 @@ class CircularMDParser:
 
 
 class PDFLawParser:
-    """Parsea PDFs de leyes chilenas y los chunkéa por artículo/modificación."""
+    """Parsea PDFs de leyes chilenas y los chunkéa por artículo/numeral/letra.
 
-    # Regex estricto: solo detecta inicios de artículo/modificación.
-    # NO detecta referencias internas tipo "artículo 58 número 3)" en medio de oración.
-    ARTICLE_START_RE = re.compile(
-        r"""
-        ^\s*
-        (?:
-            ART[ÍI]CULO\s+\d+[°\w]*\s*[\.\-]
-          | Art[íi]culo\s+\d+[°\w]*\s*[\.\-]
-          | Art\.\s+(?:\d+[°\w]*|segundo|único|primero|tercero|cuarto|quinto|sexto|séptimo|octavo|noveno|décimo)\b
-        )
-        """,
-        re.VERBOSE | re.MULTILINE,
-    )
-
-    # Líneas boilerplate de leychile.cl que no aportan valor semántico
-    _BOILERPLATE_RE = re.compile(
-        r"Biblioteca del Congreso Nacional de Chile - www\.leychile\.cl - documento generado el .*?\n",
-        re.IGNORECASE,
-    )
-    _DECRETO_HEADER_RE = re.compile(
-        r"^Decreto Ley \d+, HACIENDA \(\d{4}\)\s*$",
-        re.IGNORECASE | re.MULTILINE,
-    )
-    _PAGE_NUM_RE = re.compile(
-        r"página \d+ de \d+\s*\n",
-        re.IGNORECASE,
-    )
-
-    @staticmethod
-    def _clean_law_text(text: str) -> str:
-        """Limpia headers y metadata repetitiva de leychile.cl."""
-        text = PDFLawParser._BOILERPLATE_RE.sub("", text)
-        text = PDFLawParser._DECRETO_HEADER_RE.sub("", text)
-        text = PDFLawParser._PAGE_NUM_RE.sub("", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
-        return text.strip()
-
-    @staticmethod
-    def _extract_article_id(header: str) -> str:
-        """Extrae el identificador base del artículo para el UID."""
-        header = header.strip()
-        m = re.search(r"(?:ART[ÍI]CULO|Art[íi]culo|Art\.)\s+(\S+)", header)
-        if not m:
-            return "unknown"
-        num = m.group(1)
-        # Limpiar sufijos de puntuación (°, º, ., -)
-        num = re.sub(r"[°º\.\-]+$", "", num)
-        return num.lower()
-
-    # Regex para detectar incisos/letras/números dentro de un artículo
-    _INCISO_RE = re.compile(
-        r"(?:^|\n)\s*"
-        r"(?:"
-        r"[a-z]\)"           # a) b) c)
-        r"|[a-z]\."          # a. b. c.
-        r"|\d+\)"            # 1) 2) 3)
-        r"|\d+\."            # 1. 2. 3.
-        r"|[ivxlc]+\)"       # i) ii) iii) (romanos)
-        r"|[IVXLC]+\."      # I. II. III.
-        r")",
-        re.VERBOSE | re.MULTILINE,
-    )
-
-    @staticmethod
-    def _split_article_subchunks(article_text: str, header: str, base_uid: str, law_tag: str, filepath: Path, article_num: str, chunk_index: int) -> list[DocumentChunk]:
-        """Divide un artículo largo en sub-chunks por incisos para embeddings más precisos."""
-        subchunks: list[DocumentChunk] = []
-        # Primero, crear el chunk PADRE con el artículo completo
-        parent_uid = base_uid
-        content_hash = hashlib.sha256(article_text.encode()).hexdigest()
-        subchunks.append(DocumentChunk(
-            chunk_uid=parent_uid,
-            source_path=str(filepath),
-            filename=filepath.name,
-            source_type="ley",
-            law_tag=law_tag,
-            hierarchy_path=f"{law_tag}/art_{article_num}",
-            section_level_name=header,
-            content=article_text,
-            content_hash=content_hash,
-            metadata={
-                "tipo": "ley",
-                "articulo": article_num,
-                "articulo_header": header,
-                "filename": filepath.name,
-                "chunk_role": "parent",
-            },
-            chunk_index=chunk_index,
-            total_chunks=1,
-        ))
-
-        # Si el artículo es corto, no crear sub-chunks
-        if len(article_text) < 3500:
-            return subchunks
-
-        # Detectar incisos
-        inciso_matches = list(PDFLawParser._INCISO_RE.finditer(article_text))
-        if len(inciso_matches) < 2:
-            # No hay estructura de incisos clara: usar sliding window
-            window_size = 3000
-            overlap = 500
-            start_positions = list(range(0, len(article_text), window_size - overlap))
-            for idx, pos in enumerate(start_positions):
-                window_text = article_text[pos:pos + window_size]
-                if len(window_text.strip()) < 100:
-                    continue
-                sub_text = f"{header}\n{window_text.strip()}"
-                sub_uid = f"{base_uid}_sub_{idx}"
-                sub_hash = hashlib.sha256(sub_text.encode()).hexdigest()
-                subchunks.append(DocumentChunk(
-                    chunk_uid=sub_uid,
-                    source_path=str(filepath),
-                    filename=filepath.name,
-                    source_type="ley",
-                    law_tag=law_tag,
-                    hierarchy_path=f"{law_tag}/art_{article_num}",
-                    section_level_name=header,
-                    content=sub_text,
-                    content_hash=sub_hash,
-                    parent_chunk_uid=parent_uid,
-                    metadata={
-                        "tipo": "ley",
-                        "articulo": article_num,
-                        "articulo_header": header,
-                        "filename": filepath.name,
-                        "chunk_role": "sub_window",
-                    },
-                    chunk_index=idx,
-                    total_chunks=len(start_positions),
-                ))
-            return subchunks
-
-        # Dividir por incisos detectados
-        for idx, inc_match in enumerate(inciso_matches):
-            start = inc_match.start()
-            end = inciso_matches[idx + 1].start() if idx + 1 < len(inciso_matches) else len(article_text)
-            inciso_text = article_text[start:end].strip()
-            if len(inciso_text) < 20:
-                continue
-            # Prepend el header del artículo para que el embedding tenga contexto
-            sub_text = f"{header}\n{inciso_text}"
-            sub_uid = f"{base_uid}_sub_{idx}"
-            sub_hash = hashlib.sha256(sub_text.encode()).hexdigest()
-            subchunks.append(DocumentChunk(
-                chunk_uid=sub_uid,
-                source_path=str(filepath),
-                filename=filepath.name,
-                source_type="ley",
-                law_tag=law_tag,
-                hierarchy_path=f"{law_tag}/art_{article_num}",
-                section_level_name=header,
-                content=sub_text,
-                content_hash=sub_hash,
-                parent_chunk_uid=parent_uid,
-                metadata={
-                    "tipo": "ley",
-                    "articulo": article_num,
-                    "articulo_header": header,
-                    "filename": filepath.name,
-                    "chunk_role": "sub_inciso",
-                    "inciso_idx": idx,
-                },
-                chunk_index=idx,
-                total_chunks=len(inciso_matches),
-            ))
-
-        return subchunks
+    La segmentación jerárquica vive en legal_parser.py (parser único,
+    reutilizable para cualquier ley registrando su patrón en
+    legal_parser.DOCUMENT_PATTERNS) — esta clase solo hace la extracción
+    de texto del PDF y delega el resto.
+    """
 
     @staticmethod
     def parse(filepath: Path) -> list[DocumentChunk]:
@@ -422,7 +261,6 @@ class PDFLawParser:
             return []
 
         law_tag = PDFLawParser._detect_law_tag(filepath.name)
-        chunks: list[DocumentChunk] = []
 
         with pdfplumber.open(filepath) as pdf:
             full_text = ""
@@ -433,17 +271,13 @@ class PDFLawParser:
 
         if not full_text.strip():
             console.print(f"[yellow]⚠️ PDF vacío o no legible: {filepath}[/yellow]")
-            return chunks
+            return []
 
-        # Limpiar texto de boilerplate
-        full_text = PDFLawParser._clean_law_text(full_text)
-
-        # Detectar inicios de artículo/modificación
-        matches = list(PDFLawParser.ARTICLE_START_RE.finditer(full_text))
-        if len(matches) < 2:
-            # Fallback: guardar todo como un solo chunk
+        nodes = legal_parser.parse_articles(full_text, doc_type="ley")
+        if not nodes:
+            # Fallback: sin artículos detectables, guardar todo como un solo chunk.
             content_hash = hashlib.sha256(full_text.encode()).hexdigest()
-            chunks.append(DocumentChunk(
+            return [DocumentChunk(
                 chunk_uid=f"ley_{law_tag}_full",
                 source_path=str(filepath),
                 filename=filepath.name,
@@ -453,42 +287,15 @@ class PDFLawParser:
                 content=full_text[:MAX_EMBEDDING_CHARS],
                 content_hash=content_hash,
                 metadata={"tipo": "ley_completa", "filename": filepath.name},
-            ))
-            return chunks
+            )]
 
-        occurrence_counter: dict[str, int] = {}
-
-        for i, match in enumerate(matches):
-            start = match.start()
-            end = matches[i + 1].start() if i + 1 < len(matches) else len(full_text)
-            article_text = full_text[start:end].strip()
-
-            if len(article_text) < 15:
-                continue
-
-            header = match.group().strip()
-            article_num = PDFLawParser._extract_article_id(header)
-
-            # UID único: si hay múltiples ocurrencias del mismo artículo,
-            # agregamos un índice (modificaciones posteriores)
-            base_uid = f"ley_{law_tag}_art_{article_num}"
-            occ = occurrence_counter.get(base_uid, 0)
-            occurrence_counter[base_uid] = occ + 1
-            chunk_uid = f"{base_uid}_{occ}" if occ > 0 else base_uid
-
-            # ── Chunking jerárquico: artículo completo + sub-chunks ──
-            article_chunks = PDFLawParser._split_article_subchunks(
-                article_text=article_text,
-                header=header,
-                base_uid=chunk_uid,
-                law_tag=law_tag,
-                filepath=filepath,
-                article_num=article_num,
-                chunk_index=i,
-            )
-            chunks.extend(article_chunks)
-
-        return chunks
+        return legal_parser.to_document_chunks(
+            nodes,
+            law_tag=law_tag,
+            source_path=str(filepath),
+            filename=filepath.name,
+            source_type="ley",
+        )
 
     @staticmethod
     def _detect_law_tag(filename: str) -> str:
@@ -534,7 +341,7 @@ class IngestionPipeline:
             if chunk:
                 chunks.append(chunk)
 
-        await self._upsert_chunks(chunks)
+        await self.upsert_chunks(chunks)
         return len(chunks)
 
     async def ingest_circulares(self, base_dir: Path | None = None) -> int:
@@ -549,7 +356,7 @@ class IngestionPipeline:
             if chunk:
                 chunks.append(chunk)
 
-        await self._upsert_chunks(chunks)
+        await self.upsert_chunks(chunks)
         return len(chunks)
 
     async def ingest_leyes_pdf(self, base_dir: Path | None = None) -> int:
@@ -566,7 +373,7 @@ class IngestionPipeline:
             file_chunks = PDFLawParser.parse(filepath)
             chunks.extend(file_chunks)
 
-        await self._upsert_chunks(chunks)
+        await self.upsert_chunks(chunks)
         return len(chunks)
 
     async def ingest_all(self) -> dict[str, int]:
@@ -579,8 +386,12 @@ class IngestionPipeline:
         console.print(f"[green]✅ Total de chunks ingestados: {total}[/green]")
         return results
 
-    async def _upsert_chunks(self, chunks: list[DocumentChunk]) -> None:
-        """Inserta o actualiza chunks en Supabase con embeddings, en batches."""
+    async def upsert_chunks(self, chunks: list[DocumentChunk]) -> None:
+        """Inserta o actualiza chunks en Supabase con embeddings, en batches.
+
+        Punto de entrada compartido: también lo usa scripts/ingest_cli.py
+        para cargar documentos puntuales fuera del corpus fijo de ingest_all().
+        """
         if not chunks:
             return
 

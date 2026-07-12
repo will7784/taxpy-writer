@@ -35,6 +35,17 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 # ============================================
+# Capa 3 del router: búsqueda en vivo (live_lookup.py)
+# ============================================
+# Si no se llena, la Capa 3 queda desactivada (no rompe nada, solo no se activa).
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+# Umbral de similarity (0-1) bajo el cual se considera que el RAG interno
+# no cubre bien la consulta. Punto de partida razonable; ajustar con
+# ejemplos reales una vez que haya tráfico (ver scripts/eval_graph_lift.py
+# para la misma lógica de "decidir con evidencia, no a ciegas").
+RAG_CONFIDENCE_THRESHOLD = float(os.getenv("RAG_CONFIDENCE_THRESHOLD", "0.72"))
+
+# ============================================
 # NotebookLM (DEPRECATED — se eliminará en Fase 5)
 # ============================================
 NOTEBOOKLM_NOTEBOOK_NAME = os.getenv("NOTEBOOKLM_NOTEBOOK_NAME", "Taxpy Conocimiento")

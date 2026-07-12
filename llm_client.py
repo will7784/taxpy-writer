@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-from typing import Any
+from typing import Any, TypeVar
 
 import config
+from pydantic import BaseModel
 
 # OpenAI
 from openai import AsyncOpenAI
@@ -19,6 +20,8 @@ from openai import AsyncOpenAI
 # Gemini
 from google import genai as genai_client
 from google.genai import types as genai_types
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class LLMClient:
@@ -74,16 +77,9 @@ class LLMClient:
         )
         return response.choices[0].message.content or ""
 
-    async def _gemini_chat(
-        self,
-        model: str | None,
-        messages: list[dict[str, str]],
-        temperature: float,
-        max_tokens: int,
-    ) -> str:
-        m = model or "gemini-1.5-pro-latest"
-
-        # Separar system prompt del resto
+    @staticmethod
+    def _split_gemini_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
+        """Separa mensajes estilo OpenAI en (system_instruction, contents) para Gemini."""
         system_instruction = ""
         user_parts: list[str] = []
         for msg in messages:
@@ -95,11 +91,20 @@ class LLMClient:
                 user_parts.append(content)
             elif role == "assistant":
                 user_parts.append(f"[Respuesta anterior]: {content}")
+        return system_instruction.strip(), "\n\n".join(user_parts)
 
-        contents = "\n\n".join(user_parts)
+    async def _gemini_chat(
+        self,
+        model: str | None,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> str:
+        m = model or "gemini-1.5-pro-latest"
+        system_instruction, contents = self._split_gemini_messages(messages)
 
         config_gemini = genai_types.GenerateContentConfig(
-            system_instruction=system_instruction.strip() or None,
+            system_instruction=system_instruction or None,
             temperature=temperature,
             max_output_tokens=max_tokens,
         )
@@ -112,3 +117,75 @@ class LLMClient:
             config=config_gemini,
         )
         return response.text or ""
+
+    # ── Salida estructurada (validada contra un schema Pydantic) ────
+
+    async def chat_completion_structured(
+        self,
+        *,
+        schema: type[T],
+        messages: list[dict[str, str]],
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 2000,
+    ) -> T:
+        """Genera una respuesta validada contra un schema Pydantic.
+
+        Reemplaza el patrón frágil de parsear JSON "a mano" (strip de
+        fences markdown + json.loads) usado en decision_engine.interpret_query().
+        En OpenAI usa salida estructurada nativa (garantiza JSON válido
+        contra el schema); en Gemini usa modo JSON + validación Pydantic.
+        Lanza ValueError si el LLM no devuelve algo válido contra `schema`.
+        """
+        if self._provider == "gemini" and self._gemini:
+            return await self._gemini_structured(schema, model, messages, temperature, max_tokens)
+        if self._openai:
+            return await self._openai_structured(schema, model, messages, temperature, max_tokens)
+        raise RuntimeError("Ningún proveedor LLM está disponible.")
+
+    async def _openai_structured(
+        self,
+        schema: type[T],
+        model: str | None,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> T:
+        m = model or config.OPENAI_MODEL
+        response = await self._openai.beta.chat.completions.parse(
+            model=m,
+            messages=messages,  # type: ignore[arg-type]
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=schema,
+        )
+        parsed = response.choices[0].message.parsed
+        if parsed is None:
+            raise ValueError(f"OpenAI no devolvió una salida estructurada válida para {schema.__name__}")
+        return parsed
+
+    async def _gemini_structured(
+        self,
+        schema: type[T],
+        model: str | None,
+        messages: list[dict[str, str]],
+        temperature: float,
+        max_tokens: int,
+    ) -> T:
+        m = model or "gemini-1.5-pro-latest"
+        system_instruction, contents = self._split_gemini_messages(messages)
+
+        config_gemini = genai_types.GenerateContentConfig(
+            system_instruction=system_instruction or None,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+            response_mime_type="application/json",
+            response_schema=schema,
+        )
+        response = await asyncio.to_thread(
+            self._gemini.models.generate_content,
+            model=m,
+            contents=contents,
+            config=config_gemini,
+        )
+        return schema.model_validate_json(response.text)

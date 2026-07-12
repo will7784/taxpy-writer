@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request, UploadFile, status
@@ -22,7 +23,10 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import config
+from decision_tree_drafter import DRAFTS_DIR, to_mermaid
 from settings_store import store as settings_store
+
+TREES_DIR = config.BASE_DIR / "decision_trees" / "codigo_tributario"
 
 logger = logging.getLogger(__name__)
 
@@ -251,6 +255,125 @@ async def auth_upload(request: Request, auth_file: UploadFile):
             url=f"/dashboard?error=Error+al+subir:+{str(e)[:100]}",
             status_code=status.HTTP_302_FOUND,
         )
+
+
+# ── Revisión de borradores de árboles de decisión (Fase 4) ─
+#
+# El LLM propone (decision_tree_drafter.py escribe a decision_trees/_drafts/),
+# un humano aprueba acá. "Aprobar" solo mueve el archivo a
+# decision_trees/codigo_tributario/ si el JSON es válido — nunca se
+# publica un borrador sin pasar por esta pantalla.
+
+def _list_drafts() -> list[dict]:
+    if not DRAFTS_DIR.exists():
+        return []
+    result = []
+    for path in sorted(DRAFTS_DIR.glob("*.json")):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+            result.append({
+                "tree_id": data.get("tree_id", path.stem),
+                "title": data.get("title", "(sin título)"),
+                "article": data.get("article", ""),
+                "node_count": len(data.get("nodes", {})) + 1,
+                "filename": path.name,
+            })
+        except Exception as e:
+            result.append({"tree_id": path.stem, "title": f"[JSON inválido: {e}]", "article": "", "node_count": 0, "filename": path.name})
+    return result
+
+
+@app.get("/review/drafts", response_class=HTMLResponse)
+async def review_drafts(request: Request, message: Optional[str] = None, error: Optional[str] = None):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(request, "review_drafts.html", {
+        "drafts": _list_drafts(),
+        "message": message,
+        "error": error,
+    })
+
+
+@app.get("/review/drafts/{tree_id}", response_class=HTMLResponse)
+async def review_draft_detail(request: Request, tree_id: str, error: Optional[str] = None):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+    path = DRAFTS_DIR / f"{tree_id}.json"
+    if not path.exists():
+        return RedirectResponse(url="/review/drafts?error=Borrador+no+encontrado", status_code=status.HTTP_302_FOUND)
+
+    raw = path.read_text(encoding="utf-8")
+    mermaid = ""
+    try:
+        mermaid = to_mermaid(json.loads(raw))
+    except Exception as e:
+        error = error or f"No se pudo generar el diagrama: {e}"
+
+    return templates.TemplateResponse(request, "review_detail.html", {
+        "tree_id": tree_id,
+        "raw_json": raw,
+        "mermaid": mermaid,
+        "error": error,
+    })
+
+
+@app.post("/review/drafts/{tree_id}/save")
+async def review_draft_save(request: Request, tree_id: str, raw_json: str = Form(...)):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+    path = DRAFTS_DIR / f"{tree_id}.json"
+    try:
+        parsed = json.loads(raw_json)  # valida que sea JSON bien formado antes de guardar
+        path.write_text(json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8")
+    except json.JSONDecodeError as e:
+        return RedirectResponse(url=f"/review/drafts/{tree_id}?error=JSON+inválido:+{str(e)[:100]}", status_code=status.HTTP_302_FOUND)
+
+    return RedirectResponse(url=f"/review/drafts/{tree_id}?message=Guardado", status_code=status.HTTP_302_FOUND)
+
+
+@app.post("/review/drafts/{tree_id}/approve")
+async def review_draft_approve(request: Request, tree_id: str):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+    draft_path = DRAFTS_DIR / f"{tree_id}.json"
+    if not draft_path.exists():
+        return RedirectResponse(url="/review/drafts?error=Borrador+no+encontrado", status_code=status.HTTP_302_FOUND)
+
+    try:
+        from decision_engine import DecisionEngine
+        data = json.loads(draft_path.read_text(encoding="utf-8"))
+        # Reusa el parser real de decision_engine.py para validar que el
+        # árbol cargue correctamente antes de publicarlo (misma lógica
+        # que usa el bot en producción, no una validación aparte).
+        # _parse_tree() no toca self, así que __new__ evita cargar todo
+        # decision_trees/ solo para validar un archivo.
+        DecisionEngine._parse_tree(DecisionEngine.__new__(DecisionEngine), draft_path)
+    except Exception as e:
+        return RedirectResponse(url=f"/review/drafts/{tree_id}?error=Árbol+inválido,+no+se+puede+aprobar:+{str(e)[:150]}", status_code=status.HTTP_302_FOUND)
+
+    TREES_DIR.mkdir(parents=True, exist_ok=True)
+    final_path = TREES_DIR / draft_path.name
+    final_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+    draft_path.unlink()
+
+    return RedirectResponse(
+        url=f"/review/drafts?message=Aprobado+y+publicado+en+{final_path.name}+(reinicia+el+bot+para+que+lo+tome)",
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@app.post("/review/drafts/{tree_id}/discard")
+async def review_draft_discard(request: Request, tree_id: str):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+    path = DRAFTS_DIR / f"{tree_id}.json"
+    if path.exists():
+        path.unlink()
+    return RedirectResponse(url="/review/drafts?message=Borrador+descartado", status_code=status.HTTP_302_FOUND)
 
 
 # ── Uvicorn runner ────────────────────────────────────────

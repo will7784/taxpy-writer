@@ -26,11 +26,31 @@ from rich.console import Console
 
 import config
 import exporter
+import live_lookup
 from rag_engine import rag as rag_engine
 from settings_store import store as settings_store
+from supabase_client import supabase
 from voice_processor import VoiceProcessor
 from citation_guardrail import guardrail_check
+from decision_engine import engine as decision_engine
 from writer import WriterEngine, _load_agent_md
+
+
+def _log_query(chat_id: int, text: str) -> None:
+    """Registra la consulta real en usage_logs (best-effort, nunca bloquea el chat).
+
+    Base para scripts/eval_graph_lift.py — sin esto no hay forma de medir
+    con evidencia si el grafo de conocimiento aporta sobre consultas reales.
+    Requiere la columna query_text (sql/002_usage_logs_query_text.sql).
+    """
+    try:
+        supabase.table("usage_logs").insert({
+            "telegram_chat_id": chat_id,
+            "query_type": "chat",
+            "query_text": text[:2000],
+        }).execute()
+    except Exception:
+        pass
 
 console = Console()
 
@@ -100,18 +120,24 @@ class WriterTelegramBot:
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
         text = (
-            "🤖 *Taxpy — Asistente Tributario*\n\n"
-            "Respondo consultas de derecho tributario chileno con sustento legal "
-            "usando leyes, circulares y jurisprudencia del SII.\n\n"
+            "🤖 *ClaudIA — Asistente Tributario Chileno*\n\n"
+            "Respondo consultas de derecho tributario chileno con *precisión legal* "
+            "usando árboles de decisión validados + fuentes oficiales.\n\n"
+            "*Árboles disponibles (Código Tributario):*\n"
+            "• Citación SII para fiscalizar (Art. 63)\n"
+            "• Liquidación y giro de oficio (Art. 64-65)\n"
+            "• Determinación de oficio / Renta presunta (Art. 59-61)\n"
+            "• Prescripción de la acción tributaria (Art. 200-201)\n"
+            "• Infracciones y sanciones (Art. 97-98)\n"
+            "• Recurso de reposición y reclamación (Art. 120-122)\n"
+            "• Intereses y reajustes por mora (Art. 53-54)\n"
+            "• Cobranza ejecutiva y embargo (Art. 172-177)\n"
+            "• Secreto tributario y acceso a info (Art. 35-37)\n"
+            "• Convenio de pago y facilidades (Art. 56, 192)\n\n"
             "*Comandos:*\n"
-            "• /manual `<tema>` — manual completo con capítulos\n"
-            "• /articulo `<tema>` — artículo editorial largo\n"
-            "• /guion `<tema>` — guion de video con escenas y planos\n"
-            "• /historia `<tema>` — historia narrada como monólogo con sustento legal\n"
-            "• /outline `<tema>` — índice detallado primero (tú apruebas)\n"
             "• /fuentes — info de la base de conocimiento\n"
             "• /voz `on` / `off` — activa respuestas de voz\n\n"
-            "También puedes escribirme directamente o mandarme un *audio* para hablar con ClaudIA 🎙️"
+            "Escribe tu consulta directamente y navegaré el árbol de decisión correspondiente 🌳"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
 
@@ -158,47 +184,31 @@ class WriterTelegramBot:
     async def _manual(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        topic = " ".join(context.args or []).strip()
-        if not topic:
-            await update.message.reply_text("Usa: /manual `<tema a desarrollar>`")
-            return
-        await self._process_request(update, topic, "manual")
+        await update.message.reply_text(
+            "📝 El modo escritor (manual / artículo / guion) fue descontinuado.\n\n"
+            "Ahora ClaudIA opera con *árboles de decisión jurídica* para máxima precisión.\n\n"
+            "Escribe tu consulta directamente y navegaré el árbol correspondiente. 🌳"
+        )
 
     async def _articulo(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        topic = " ".join(context.args or []).strip()
-        if not topic:
-            await update.message.reply_text("Usa: /articulo `<tema a desarrollar>`")
-            return
-        await self._process_request(update, topic, "articulo")
+        await self._manual(update, context)
 
     async def _guion(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        topic = " ".join(context.args or []).strip()
-        if not topic:
-            await update.message.reply_text("Usa: /guion `<tema a desarrollar>`")
-            return
-        await self._process_request(update, topic, "guion")
+        await self._manual(update, context)
 
     async def _historia(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        topic = " ".join(context.args or []).strip()
-        if not topic:
-            await update.message.reply_text("Usa: /historia `<tema a desarrollar>`")
-            return
-        await self._process_request(update, topic, "historia")
+        await self._manual(update, context)
 
     async def _outline(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        topic = " ".join(context.args or []).strip()
-        if not topic:
-            await update.message.reply_text("Usa: /outline `<tema a desarrollar>`")
-            return
-        await self._process_outline(update, topic)
+        await self._manual(update, context)
 
     async def _voz(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -400,6 +410,11 @@ class WriterTelegramBot:
             await self._process_outline(update, text)
             return
 
+        # Si hay un árbol de decisión pendiente, continuarlo
+        if session.get("type") == "decision_tree_pending":
+            await self._continue_decision_tree(update, text, session)
+            return
+
         # Mensaje libre normal
         detected = self.writer.detect_content_type(text)
         if detected in ("manual", "articulo", "guion", "historia"):
@@ -416,76 +431,247 @@ class WriterTelegramBot:
         cleaned = re.sub(r'\n\s*\n+', '\n\n', cleaned)
         return cleaned.strip()
 
+    async def _continue_decision_tree(
+        self,
+        update: Update,
+        text: str,
+        session: dict,
+    ) -> None:
+        """Continúa un árbol de decisión donde el usuario se quedó."""
+        chat_id = int(update.effective_chat.id)
+        tree_id = session["tree_id"]
+        current_node_id = session["current_node"]
+        facts = dict(session.get("facts", {}))
+        
+        tree = decision_engine._trees.get(tree_id)
+        if not tree:
+            await update.message.reply_text("⚠️ No pude continuar el árbol. Intenta con una nueva consulta.")
+            self._sessions.pop(chat_id, None)
+            return
+        
+        await update.message.chat.send_action(action="typing")
+        status_msg = await update.message.reply_text("🌳 Continuando árbol...")
+        
+        # Intentar parsear número de opción
+        if text.isdigit():
+            current_node = tree.nodes.get(current_node_id)
+            if current_node and current_node.branches:
+                idx = int(text) - 1
+                if 0 <= idx < len(current_node.branches):
+                    branch = current_node.branches[idx]
+                    facts[branch["condition"]] = True
+                else:
+                    await status_msg.delete()
+                    await update.message.reply_text(
+                        f"⚠️ Opción no válida. Elige un número entre 1 y {len(current_node.branches)}."
+                    )
+                    return
+        else:
+            # Usar LLM para extraer facts de la respuesta
+            try:
+                new_facts = await decision_engine.interpret_query(text, tree, self.writer._llm)
+                facts.update(new_facts)
+            except Exception as e:
+                console.print(f"[yellow]Error extrayendo facts: {e}[/yellow]")
+        
+        # Continuar recorrido
+        result, path, advanced = decision_engine.continue_tree(tree, current_node_id, facts)
+        
+        if result.type == "result":
+            content = decision_engine.render_result(tree, result, path, include_diagram=True)
+            await status_msg.delete()
+            await update.message.reply_text(content)
+            self._sessions[chat_id] = {
+                "title": session["title"],
+                "content": content,
+                "type": "decision_tree",
+                "tree_id": tree.tree_id,
+                "path_nodes": [n.id for n in path],
+                "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+            }
+            return
+        
+        # Si no avanzamos, re-preguntar
+        if not advanced:
+            current_node = tree.nodes.get(current_node_id)
+            if current_node and current_node.branches:
+                interactive = decision_engine.render_interactive(current_node)
+                await status_msg.delete()
+                await update.message.reply_text(
+                    f"🌳 *{tree.title}*\n\n"
+                    f"Necesito más información para continuar:\n\n"
+                    f"{interactive}\n\n"
+                    "Responde con el número de la opción que corresponda."
+                )
+                self._sessions[chat_id] = {
+                    **session,
+                    "facts": facts,
+                }
+                return
+        
+        # Avanzamos pero llegamos a otro nodo de decisión
+        last_node = path[-1] if path else None
+        if last_node and last_node.type == "decision" and last_node.branches:
+            interactive = decision_engine.render_interactive(last_node)
+            await status_msg.delete()
+            await update.message.reply_text(
+                f"🌳 *{tree.title}*\n\n"
+                f"Siguiente pregunta:\n\n"
+                f"{interactive}\n\n"
+                "Responde con el número de la opción que corresponda."
+            )
+            self._sessions[chat_id] = {
+                **session,
+                "current_node": last_node.id,
+                "path_so_far": [n.id for n in path],
+                "facts": facts,
+            }
+            return
+        
+        # Fallback
+        await status_msg.edit_text("🌳 Árbol incompleto. Buscando en fuentes...")
+        await self._process_chat(update, text)
+
     async def _process_chat(
         self,
         update: Update,
         text: str,
     ) -> None:
-        """Procesa una conversación de chat: busca en RAG → responde con GPT-4o."""
+        """Procesa una conversación de chat:
+        1. Busca Árbol de Decisión → si hay, navega y responde con precisión.
+        2. Si no hay árbol → fallback a RAG.
+        """
         chat_id = int(update.effective_chat.id)
+        _log_query(chat_id, text)
 
         await update.message.chat.send_action(action="typing")
-        status_msg = await update.message.reply_text("🔍 Buscando en la base de conocimiento...")
+        status_msg = await update.message.reply_text("🌳 Buscando árbol de decisión...")
 
         content = ""
-        source = "rag"
+        source = "decision_tree"
         search_results = []
 
         try:
-            # 1. Buscar en RAG
+            # ── PASO 1: Intentar Árbol de Decisión ─────────────────────────
+            tree, result_node, path, facts = await decision_engine.navigate_tree(
+                text, llm_client=self.writer._llm
+            )
+
+            if tree:
+                await status_msg.edit_text(f"🌳 Árbol encontrado: *{tree.title}*\nNavegando con LLM...")
+
+                # Si llegamos a un nodo resultado → renderizar
+                if result_node and result_node.type == "result":
+                    content = decision_engine.render_result(
+                        tree, result_node, path, include_diagram=True
+                    )
+                    await status_msg.delete()
+                    await update.message.reply_text(content)
+                    source = "decision_tree"
+
+                    # Guardar sesión
+                    self._sessions[chat_id] = {
+                        "title": text,
+                        "content": content,
+                        "type": "decision_tree",
+                        "tree_id": tree.tree_id,
+                        "path_nodes": [n.id for n in path],
+                        "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+                    }
+                    return
+
+                # Si NO llegamos a resultado → hacer pregunta de clarificación
+                # Buscamos el primer nodo de decisión en el path que no tenga match
+                if path:
+                    last_node = path[-1]
+                    if last_node.type == "decision" and last_node.branches:
+                        await status_msg.delete()
+                        interactive = decision_engine.render_interactive(last_node)
+                        await update.message.reply_text(
+                            f"🌳 *{tree.title}*\n\n"
+                            f"Encontré el árbol, pero necesito más información para llegar a la respuesta:\n\n"
+                            f"{interactive}\n\n"
+                            "Responde con el número de la opción que corresponda."
+                        )
+                        # Guardamos estado para continuar conversación
+                        self._sessions[chat_id] = {
+                            "title": text,
+                            "content": "",
+                            "type": "decision_tree_pending",
+                            "tree_id": tree.tree_id,
+                            "current_node": last_node.id,
+                            "path_so_far": [n.id for n in path],
+                            "facts": facts,
+                            "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+                        }
+                        return
+
+                # Si no hay branches → algo extraño, fallback a RAG
+                await status_msg.edit_text("🌳 Árbol incompleto. Buscando en fuentes...")
+
+            else:
+                await status_msg.edit_text("🔍 No hay árbol para este tema. Buscando en fuentes legales...")
+
+            # ── PASO 2: Fallback a RAG ─────────────────────────────────────
             search_results = await rag_engine.search_for_conversation(text)
 
-            if not search_results:
+            # ── PASO 3: Fallback a búsqueda en vivo (live_lookup.py) ────────
+            # Se activa si el RAG interno no encontró nada o su mejor
+            # resultado está bajo el umbral de confianza (config.RAG_CONFIDENCE_THRESHOLD).
+            low_confidence = not search_results or search_results[0].similarity < config.RAG_CONFIDENCE_THRESHOLD
+            live_results: list[dict] = []
+            if low_confidence:
+                await status_msg.edit_text("🌐 Verificando en fuentes oficiales en línea...")
+                try:
+                    live_results = await live_lookup.search_live(text)
+                except Exception as e:
+                    console.print(f"[yellow]⚠️ live_lookup falló: {e}[/yellow]")
+
+            if not search_results and not live_results:
                 await status_msg.delete()
                 content = (
                     "💬 No encontré información sobre eso en mi base de conocimiento tributario.\n\n"
-                    "Actualmente tengo indexados:\n"
-                    "• Leyes: Código Tributario, Ley de Renta (LIR), Ley del IVA\n"
-                    "• Circulares del SII\n"
-                    "• Jurisprudencia judicial del SII (Código Tributario, arts. 1-57)\n\n"
+                    "Actualmente tengo árboles de decisión para estos temas del Código Tributario:\n"
+                    "• Citación SII (Art. 63)\n"
+                    "• Liquidación y giro de oficio (Art. 64-65)\n"
+                    "• Determinación de oficio (Art. 59-61)\n"
+                    "• Prescripción (Art. 200-201)\n"
+                    "• Infracciones y sanciones (Art. 97-98)\n"
+                    "• Recurso de reposición (Art. 120-122)\n"
+                    "• Intereses por mora (Art. 53-54)\n"
+                    "• Cobranza y embargo (Art. 172-177)\n"
+                    "• Secreto tributario (Art. 35-37)\n"
+                    "• Convenio de pago (Art. 56, 192)\n\n"
                     "Prueba con una consulta relacionada con estos temas."
                 )
                 source = "rag_empty"
             else:
-                # 2. Construir contexto y generar respuesta
-                context = await rag_engine.build_context(search_results, query=text)
-
+                context = await rag_engine.build_context(search_results, query=text) if search_results else ""
+                live_context = live_lookup.format_for_context(live_results)
                 await status_msg.edit_text("💬 Analizando fuentes legales...")
 
-                # Cargar instrucciones unificadas del agente (agent.md)
                 agent_md = _load_agent_md()
 
                 system = (
-                    "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL, "
-                    "como si estuvieras hablando por teléfono con un colega.\n\n"
-                    "REGLA ABSOLUTA #1 (CITAS): Cada afirmación de derecho DEBE ir acompañada de su cita exacta "
-                    "entre paréntesis, usando el formato: '(Art. XX del [Cuerpo Legal])'. "
-                    "Ejemplo: 'los gastos de representación son rechazados (Art. 21 de la Ley sobre Impuesto a la Renta, DL-824)'. "
-                    "NO cites de memoria. Si no estás 100% seguro del número de artículo, NO lo inventes. "
-                    "Usa SOLO los artículos, leyes y normas que aparezcan en las FUENTES proporcionadas.\n\n"
-                    "REGLA ABSOLUTA #2 (FUENTES): Usa ÚNICAMENTE la información de las FUENTES proporcionadas abajo. "
-                    "NO inventes artículos, leyes, decretos, oficios, circulares ni jurisprudencia que no "
-                    "aparezcan en las fuentes.\n\n"
-                    "REGLA DE INTERPRETACIÓN: Si las fuentes contienen la respuesta —incluso usando "
-                    "términos técnicos, referencias cruzadas o números de artículo diferente a los de la pregunta— "
-                    "debes RECONOCERLA, EXPLICARLA con precisión y CITAR la norma exacta. "
-                    "Las NOTAS DE DOMINIO en el contexto te indican explícitamente cómo interpretar estas conexiones.\n\n"
-                    "NUNCA digas 'no encontré información' si la respuesta ESTÁ en las fuentes, aunque use "
-                    "lenguaje formal de ley (ej: 'artículo 14 letra D' en lugar de 'PRO-PYME').\n\n"
-                    "NUNCA uses markdown, títulos, bullets ni numeración. "
-                    "Máximo 250 palabras. Termina con una pregunta breve.\n\n"
-                    "--- PERFIL Y CONOCIMIENTOS DEL AGENTE (contexto de fondo, no formato) ---\n"
+                    "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL.\n\n"
+                    "REGLA ABSOLUTA: Cada afirmación DEBE ir acompañada de su cita exacta "
+                    "entre paréntesis: '(Art. XX del [Cuerpo Legal])' para normas, o "
+                    "'(fuente: URL)' si la afirmación viene de una FUENTE WEB EN VIVO. "
+                    "NO inventes artículos. Usa SOLO las fuentes proporcionadas.\n\n"
+                    "NUNCA uses markdown ni bullets. Máximo 250 palabras.\n\n"
+                    "--- PERFIL DEL AGENTE ---\n"
                     f"{agent_md}\n"
-                    "--- FIN DEL PERFIL ---"
+                    "--- FIN ---"
                 )
 
+                fuentes = context
+                if live_context:
+                    fuentes = f"{context}\n\n{live_context}" if context else live_context
+
                 user_prompt = (
-                    f"Consulta del usuario: {text}\n\n"
-                    f"FUENTES RELEVANTES (usa SOLO esta información):\n{context}\n\n"
-                    "Responde de forma conversacional. Usa las fuentes anteriores y las NOTAS DE DOMINIO "
-                    "para interpretar referencias cruzadas. Si la respuesta está en las fuentes, explícala "
-                    "con precisión y cita la norma exacta entre paréntesis. Solo si REALMENTE no está, "
-                    "dí que no tienes esa información en tus fuentes indexadas."
+                    f"Consulta: {text}\n\n"
+                    f"FUENTES (usa SOLO esto):\n{fuentes}\n\n"
+                    "Responde con precisión y cita la norma o la fuente web. Si no está, di que no tienes esa info."
                 )
 
                 content = await self.writer._llm.chat_completion(
@@ -498,80 +684,66 @@ class WriterTelegramBot:
                 )
                 content = content.strip()
 
-                # Guardrail: verificar que las citas existan en el contexto
                 try:
-                    content = guardrail_check(context, content)
+                    content = guardrail_check(fuentes, content)
                 except Exception as e:
-                    console.print(f"[yellow]⚠️ Guardrail falló (no crítico): {e}[/yellow]")
+                    console.print(f"[yellow]⚠️ Guardrail: {e}[/yellow]")
+
+                source = "rag" if search_results else "live_lookup"
+
+            await status_msg.delete()
+
+            # Guardar sesión
+            self._sessions[chat_id] = {
+                "title": text,
+                "content": content,
+                "type": "conversacion",
+                "outline": "",
+                "research": content,
+                "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+                "outline_pending": False,
+                "search_results": [r.chunk.chunk_uid for r in search_results],
+            }
+
+            # Enviar texto
+            await update.message.reply_text(content)
+
+            # PDFs
+            if search_results:
+                pdf_buttons = []
+                seen_pdfs = set()
+                for r in search_results[:3]:
+                    meta = r.chunk.metadata or {}
+                    pdf_url = meta.get("pdf_url", "")
+                    if pdf_url and pdf_url != "N/A" and pdf_url not in seen_pdfs:
+                        seen_pdfs.add(pdf_url)
+                        pdf_buttons.append(
+                            InlineKeyboardButton(
+                                f"📄 {r.chunk.filename[:30]}",
+                                url=pdf_url,
+                            )
+                        )
+                if pdf_buttons:
+                    await update.message.reply_text(
+                        "📎 Fuentes con PDF:",
+                        reply_markup=InlineKeyboardMarkup([pdf_buttons]),
+                    )
 
         except Exception as e:
-            console.print(f"[red]RAG chat error: {e}[/red]")
+            console.print(f"[red]Chat error: {e}[/red]")
             import traceback
             console.print(traceback.format_exc())
+            await status_msg.edit_text("❌ Error procesando la consulta. Intenta de nuevo.")
+            return
 
-            # Fallback: usar GPT-4o
-            await status_msg.edit_text(
-                "⚠️ No pude consultar la base de conocimiento. Generando respuesta con GPT-4o..."
-            )
-            try:
-                content = await self.writer.write(text, "", "conversacion")
-                source = "gpt4o_fallback"
-            except Exception as e2:
-                console.print(f"[red]Fallback GPT-4o también falló: {e2}[/red]")
-                await status_msg.edit_text(
-                    "❌ Error generando la respuesta. Intenta de nuevo en unos segundos."
-                )
-                return
-
-        await status_msg.delete()
-
-        # Guardar sesión ligera
-        self._sessions[chat_id] = {
-            "title": text,
-            "content": content,
-            "type": "conversacion",
-            "outline": "",
-            "research": content,
-            "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
-            "outline_pending": False,
-            "search_results": [r.chunk.chunk_uid for r in search_results],
-        }
-
-        # Enviar texto
-        await update.message.reply_text(content)
-
-        # Botón de PDF si hay fuentes con PDF disponible
-        if search_results:
-            pdf_buttons = []
-            seen_pdfs = set()
-            for r in search_results[:3]:
-                meta = r.chunk.metadata or {}
-                pdf_url = meta.get("pdf_url", "")
-                if pdf_url and pdf_url != "N/A" and pdf_url not in seen_pdfs:
-                    seen_pdfs.add(pdf_url)
-                    pdf_buttons.append(
-                        InlineKeyboardButton(
-                            f"📄 {r.chunk.filename[:30]}",
-                            url=pdf_url,
-                        )
-                    )
-            if pdf_buttons:
-                await update.message.reply_text(
-                    "📎 Fuentes con PDF disponible:",
-                    reply_markup=InlineKeyboardMarkup([pdf_buttons]),
-                )
-
-        # Voz si está activada (modo legacy /voz on)
-        if self._sessions[chat_id].get("voice_enabled") and self.voice:
+        # Voz
+        if self._sessions.get(chat_id, {}).get("voice_enabled") and self.voice:
             await update.message.chat.send_action(action="upload_voice")
             try:
                 voice_bytes = await self.voice.synthesize(content)
-                await update.message.reply_voice(
-                    voice=voice_bytes,
-                    caption="🎙️ ClaudIA",
-                )
+                await update.message.reply_voice(voice=voice_bytes, caption="🎙️ ClaudIA")
             except Exception as e:
-                console.print(f"[yellow]TTS falló: {e}[/yellow]")
+                console.print(f"[yellow]TTS: {e}[/yellow]")
 
     async def _handle_voice(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

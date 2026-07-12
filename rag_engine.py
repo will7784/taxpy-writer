@@ -323,8 +323,8 @@ class RAGEngine:
         extra: list[SearchResult] = []
 
         def _force_chunk(uid: str, sim: float = 0.95) -> None:
-            if uid in seen:
-                return
+            # NOTA: no filtramos por `seen` aquí; dejamos que `search()` decida
+            # si agregar el chunk nuevo o actualizar su similitud.
             for chunk in self._law_cache:
                 if chunk.chunk_uid == uid or chunk.chunk_uid.startswith(f"{uid}_"):
                     extra.append(SearchResult(chunk=chunk, similarity=sim))
@@ -503,6 +503,14 @@ class RAGEngine:
                 if uid not in seen:
                     seen.add(uid)
                     vector_results.append(dr)
+                else:
+                    # BUGFIX: si el chunk ya estaba en resultados (ej. keyword search
+                    # lo trajo con baja similitud), SUBIMOS su similitud al valor
+                    # forzado para que quede en el top_k final.
+                    for r in vector_results:
+                        if r.chunk.chunk_uid == uid:
+                            r.similarity = max(r.similarity, dr.similarity)
+                            break
 
             # 6. Parent resolution: si un resultado es sub-chunk, traer el padre para contexto completo
             parent_uids: set[str] = set()

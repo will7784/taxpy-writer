@@ -337,19 +337,16 @@ class WriterEngine:
         # Agregar few-shot específico para inmuebles si aplica
         if any(k in topic.lower() for k in ("inmueble", "bien raiz", "bien raíz", "venta propiedad", "enajenación")):
             system += (
-                "\n\nEJEMPLO DE RESPUESTA CORRECTA (tema: venta de inmuebles):\n"
-                "'La ganancia de capital obtenida por una persona natural en la enajenación de bienes raíces "
-                "está exenta hasta 8.000 UF, siempre que el bien haya sido adquirido con anterioridad al 1° de enero de 2004 "
-                "o se trate de una enajenación posterior a esa fecha sujeta a las normas transitorias. "
-                "El excedente sobre las 8.000 UF se grava con el IGC o el Impuesto Adicional, "
-                "o bien el contribuyente puede optar por un impuesto único sustitutivo del 10% sobre la ganancia de capital. "
-                "(Artículo 17 N° 8, Ley sobre Impuesto a la Renta, DL-824).'\n\n"
-                "EJEMPLO DE RESPUESTA INCORRECTA (NUNCA hagas esto):\n"
-                "'Existe una exención por vivienda habitual si se ha vivido más de un año en la propiedad.' → "
-                "ESTO ES FALSO EN CHILE. NO existe ese concepto en la LIR.\n\n"
-                "EJEMPLO DE RESPUESTA INCORRECTA (NUNCA hagas esto):\n"
-                "'Debes poseer el inmueble por un periodo mínimo para acceder a la exención.' → "
-                "ESTO ES FALSO EN CHILE. NO existe periodo mínimo de posesión para inmuebles en la LIR.\n\n"
+                "\n\nEJEMPLO DE RESPUESTA CORRECTA (tema: venta de inmuebles por persona natural):\n"
+                "'La ganancia de capital de una persona natural en la enajenación de bienes raíces "
+                "es ingreso no constitutivo de renta hasta 8.000 UF anuales. "
+                "El excedente se grava con IGC o Adicional, o puede optarse por un impuesto único sustitutivo del 10%. "
+                "Debe haber más de un año entre adquisición y venta (cuatro años si es subdivisión o construcción). "
+                "No aplica IVA en la venta. (Art. 17 N° 8, Ley sobre Impuesto a la Renta, DL-824).'\n\n"
+                "ERRORES COMUNES QUE NUNCA DEBES COMETER:\n"
+                "- NUNCA digas que hay 'exención por vivienda habitual' o 'periodo mínimo de posesión': NO EXISTEN en la LIR chilena.\n"
+                "- NUNCA digas que aplica IVA en la venta de inmuebles por persona natural: NO aplica IVA en este caso.\n"
+                "- NUNCA cites el Art. 14 A N° 1 letra c) como vigente: fue DEROGADO en 2014.\n\n"
             )
 
         user_prompt = (

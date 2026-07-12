@@ -1,0 +1,79 @@
+{
+  "tree_id": "cobranza_embargo",
+  "title": "Cobranza Ejecutiva y Embargo de Bienes",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 172-177",
+  "description": "Procedimiento de cobranza ejecutiva del SII. Medidas cautelares, embargo de bienes, retenciones de terceros, y defensas del contribuyente.",
+  "tags": ["cobranza", "ejecutiva", "embargo", "bienes", "retencion", "retención", "deuda", "sii", "remate", "art 172", "art 173", "art 177"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El SII ha iniciado cobranza ejecutiva contra el contribuyente?",
+    "help": "La cobranza ejecutiva comienza cuando la liquidación está firme (15 días sin pago ni reclamación) y el SII notifica la resolución de cobranza.",
+    "legal_ref": "Art. 172, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "sii_cobranza", "next_node": "etapa_cobranza"},
+      {"condition": "no_cobranza", "next_node": "result_sin_cobranza"}
+    ]
+  },
+  "nodes": {
+    "result_sin_cobranza": {
+      "id": "result_sin_cobranza",
+      "type": "result",
+      "summary": "Sin cobranza ejecutiva iniciada, el contribuyente aún tiene tiempo para: pagar, reclamar, o convenir. Una vez iniciada la cobranza, las opciones se reducen.",
+      "details": "Antes de la cobranza: (1) Pagar y detener intereses. (2) Reclamar la liquidación (15 días). (3) Solicitar convenio de pago. (4) Pagar bajo protesta. Una vez iniciada la cobranza ejecutiva, el embargo puede afectar cuentas bancarias, bienes raíces, vehículos, etc.",
+      "warnings": ["NO espere a la cobranza para actuar."],
+      "next_steps": ["Pagar o convenir ANTES de que inicie cobranza", "Reclamar si la liquidación es incorrecta"],
+      "legal_refs": ["Art. 172 CT", "Art. 56 CT (convenio)"]
+    },
+    "etapa_cobranza": {
+      "id": "etapa_cobranza",
+      "type": "decision",
+      "question": "¿En qué etapa está la cobranza ejecutiva?",
+      "help": "La cobranza tiene etapas: (1) Notificación de cobranza, (2) Medidas cautelares (retenciones), (3) Embargo de bienes, (4) Remate.",
+      "legal_ref": "Art. 172-177 CT",
+      "branches": [
+        {"condition": "notificacion_cobranza", "next_node": "result_notificacion"},
+        {"condition": "retenciones", "next_node": "result_retenciones"},
+        {"condition": "embargo", "next_node": "result_embargo"},
+        {"condition": "remate", "next_node": "result_remate"}
+      ]
+    },
+    "result_notificacion": {
+      "id": "result_notificacion",
+      "type": "result",
+      "summary": "ETAPA 1: NOTIFICACIÓN DE COBRANZA. El SII notifica la resolución de cobranza. Plazo para pagar o contradecir: 15 días hábiles.",
+      "details": "En esta etapa el contribuyente puede: (1) Pagar la deuda completa. (2) Solicitar convenio de pago (Art. 56 CT). (3) Contradecir la cobranza si la deuda está prescrita, pagada, o firme indebidamente. (4) Presentar garantía para suspender la cobranza.",
+      "warnings": ["Si no actúa en 15 días, el SII pasará a medidas cautelares."],
+      "next_steps": ["Pagar URGENTEMENTE", "Solicitar convenio de pago", "Presentar contradicción si aplica", "Presentar garantía bancaria"],
+      "legal_refs": ["Art. 172 CT", "Art. 56 CT", "Art. 174 CT (garantías)"]
+    },
+    "result_retenciones": {
+      "id": "result_retenciones",
+      "type": "result",
+      "summary": "ETAPA 2: MEDIDAS CAUTELARES / RETENCIONES. El SII ordena a terceros (bancos, empleadores, deudores) retener fondos del contribuyente. Art. 177 CT.",
+      "details": "El Art. 177 CT permite al SII ordenar a terceros que retengan fondos: (a) Bancos: retención de saldos en cuentas corrientes/ahorro. (b) Empleadores: retención de remuneraciones. (c) Deudores del contribuyente: retención de pagos pendientes. El contribuyente puede: (1) Solicitar levantamiento si la retención es excesiva (Art. 176 CT). (2) Ofrecer garantía sustitutiva. (3) Acreditar que los fondos son de terceros (cuenta de terceros, fondos de administración).",
+      "warnings": ["Las retenciones pueden dejar al contribuyente SIN LIQUIDEZ.", "Los fondos retenidos se aplican a la deuda automáticamente."],
+      "next_steps": ["Verificar qué terceros recibieron órdenes de retención", "Solicitar levantamiento si es excesivo", "Ofrecer garantía sustitutiva", "Acreditar titularidad real de fondos si son de terceros"],
+      "legal_refs": ["Art. 177 CT (retenciones)", "Art. 176 CT (exceso en medidas cautelares)", "Art. 174 CT (garantías)"]
+    },
+    "result_embargo": {
+      "id": "result_embargo",
+      "type": "result",
+      "summary": "ETAPA 3: EMBARGO DE BIENES. El SII inscribe embargo en bienes raíces (Conservador de Bienes Raíces), vehículos (Registro Civil), o bienes muebles. Art. 173 CT.",
+      "details": "El Art. 173 CT regula el embargo: (1) Bienes raíces: inscripción en el Conservador. El embargo impide vender, gravar o transferir. (2) Vehículos: inscripción en Registro Civil. (3) Bienes muebles: secuestro físico o anotación. DEFENSAS: (a) Bienes de familia (Ley 20.220): la vivienda principal está protegida hasta cierto monto. (b) Bienes necesarios para el trabajo: herramientas, equipos. (c) Prescripción de la deuda (Art. 200 CT). (d) Pago previo no considerado.",
+      "warnings": ["El embargo de bienes raíces queda registrado públicamente y afecta el historial del contribuyente.", "Los bienes de familia NO están completamente exentos: hay un límite de protección."],
+      "next_steps": ["Verificar bienes embargados en Conservador y Registro Civil", "Evaluar si aplica protección de bienes de familia", "Acreditar pago previo si lo hubo", "Solicitar levantamiento por prescripción si aplica"],
+      "legal_refs": ["Art. 173 CT (embargo)", "Art. 200 CT (prescripción)", "Ley 20.220 (bienes de familia)"]
+    },
+    "result_remate": {
+      "id": "result_remate",
+      "type": "result",
+      "summary": "ETAPA 4: REMATE DE BIENES. El SII remata los bienes embargados para satisfacer la deuda. Art. 175 CT.",
+      "details": "El Art. 175 CT regula el remate: (1) El SII fija el precio base (generalmente el avalúo fiscal). (2) Publica edictos. (3) Si no hay oferentes, puede adjudicarse el bien al SII (para enajenación posterior). (4) El remate extingue la deuda hasta el monto recaudado. Si el remate produce excedente, se devuelve al contribuyente. El contribuyente puede: (a) Pagar la deuda ANTES del remate (Art. 175 inc. 4°). (b) Solicitar suspensión del remate presentando garantía. (c) Impugnar el avalúo si es excesivamente bajo.",
+      "warnings": ["El remate por lo general se hace a precio de avalúo fiscal, que suele ser INFERIOR al valor de mercado.", "Una vez rematado, el contribuyente pierde el bien."],
+      "next_steps": ["Pagar la deuda ANTES del remate", "Solicitar suspensión con garantía", "Impugnar avalúo si es irrisorio", "Evaluar si la deuda está prescrita"],
+      "legal_refs": ["Art. 175 CT (remate)", "Art. 174 CT (garantías)", "Art. 200 CT (prescripción)"]
+    }
+  }
+}

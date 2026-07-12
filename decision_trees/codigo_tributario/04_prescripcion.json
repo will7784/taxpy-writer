@@ -1,0 +1,132 @@
+{
+  "tree_id": "prescripcion",
+  "title": "Prescripción de la Acción Tributaria",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 200-201",
+  "description": "Plazos dentro de los cuales el SII puede exigir el pago de tributos. Una vez prescrita, la deuda tributaria se extingue. Determina si una obligación está prescrita o no.",
+  "tags": ["prescripcion", "prescripción", "caducidad", "plazo", "tres años", "6 años", "seis años", "extincion", "extinción", "deuda", "tributaria", "art 200", "art 201"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El SII está exigiendo el pago de una obligación tributaria?",
+    "help": "La prescripción es la extinción de la obligación tributaria por el transcurso del tiempo. Es una defensa muy poderosa del contribuyente.",
+    "legal_ref": "Art. 200, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "sii_exige", "next_node": "tipo_tributo"},
+      {"condition": "no_exige", "next_node": "result_sin_exigencia"}
+    ]
+  },
+  "nodes": {
+    "result_sin_exigencia": {
+      "id": "result_sin_exigencia",
+      "type": "result",
+      "summary": "Sin exigencia del SII vigente, la prescripción NO es relevante por ahora. El plazo comienza a correr desde el vencimiento de la obligación.",
+      "details": "La acción tributaria prescribe por el transcurso del tiempo desde el vencimiento de la obligación. El plazo general es de 3 años (Art. 200 CT). Si el SII aún no ha exigido el pago, el plazo está corriendo. El contribuyente puede: (1) Esperar a que prescriba (riesgoso si el SII actúa), (2) Regularizar voluntariamente (más barato), (3) Solicir certificado de no adeudo cuando pase el plazo.",
+      "warnings": ["La prescripción es INTERRUPTIBLE. Si el SII notifica un requerimiento o cita, el plazo se interrumpe y comienza a correr de nuevo."],
+      "next_steps": ["Calcular fecha de vencimiento de la obligación", "Contar plazo desde esa fecha", "Verificar si hubo interrupciones"],
+      "legal_refs": ["Art. 200 CT (prescripción)", "Art. 201 CT (computo e interrupción)"]
+    },
+    "tipo_tributo": {
+      "id": "tipo_tributo",
+      "type": "decision",
+      "question": "¿Qué tipo de tributo o actuación está exigiendo el SII?",
+      "help": "El plazo de prescripción varía según el tipo de tributo o actuación. No todos tienen el mismo plazo.",
+      "legal_ref": "Art. 200, incisos 1° y 2°, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "tributo_anual", "next_node": "plazo_3_anos"},
+        {"condition": "tributo_mensual", "next_node": "plazo_3_mensual"},
+        {"condition": "determinacion_oficio", "next_node": "plazo_3_oficio"},
+        {"condition": "multa_sancion", "next_node": "plazo_3_multa"},
+        {"condition": "delito_tributario", "next_node": "plazo_6_delito"},
+        {"condition": "reajuste_materia", "next_node": "plazo_6_reajuste"}
+      ]
+    },
+    "plazo_3_anos": {
+      "id": "plazo_3_anos",
+      "type": "info",
+      "summary": "TRIBUTOS ANUALES (IGC, IA, FUT, etc.): Plazo de prescripción = 3 años desde el vencimiento de la obligación.",
+      "help": "El Art. 200, inc. 1° CT establece plazo de 3 años para tributos anuales.",
+      "legal_ref": "Art. 200, inc. 1°, Código Tributario (DL-830)",
+      "next_node": "computo_plazo"
+    },
+    "plazo_3_mensual": {
+      "id": "plazo_3_mensual",
+      "type": "info",
+      "summary": "TRIBUTOS MENSUALES O PERIÓDICOS (IVA, retenciones, etc.): Plazo de prescripción = 3 años desde el vencimiento de cada período.",
+      "help": "Cada período mensual prescribe independientemente.",
+      "legal_ref": "Art. 200, inc. 1°, Código Tributario (DL-830)",
+      "next_node": "computo_plazo"
+    },
+    "plazo_3_oficio": {
+      "id": "plazo_3_oficio",
+      "type": "info",
+      "summary": "DETERMINACIÓN DE OFICIO: Plazo de prescripción = 3 años desde el vencimiento de la obligación original.",
+      "help": "La determinación de oficio NO extiende el plazo. El cómputo sigue siendo desde el vencimiento de la obligación original.",
+      "legal_ref": "Art. 200, inc. 1°, Código Tributario (DL-830)",
+      "next_node": "computo_plazo"
+    },
+    "plazo_3_multa": {
+      "id": "plazo_3_multa",
+      "type": "info",
+      "summary": "MULTAS Y SANCIONES: Plazo de prescripción = 3 años desde la fecha de la infracción o desde que quedó firme la resolución que impone la sanción.",
+      "help": "Hay discusión sobre el cómputo: ¿desde la infracción o desde la firmeza de la sanción? La tendencia jurisprudencial favorece al contribuyente: desde la firmeza.",
+      "legal_ref": "Art. 200, inc. 1°, Código Tributario (DL-830)",
+      "next_node": "computo_plazo"
+    },
+    "plazo_6_delito": {
+      "id": "plazo_6_delito",
+      "type": "info",
+      "summary": "DELITO TRIBUTARIO: Plazo de prescripción = 6 años (para delitos con pena máxima > 3 años) o 3 años (para delitos con pena máxima ≤ 3 años).",
+      "help": "El delito tributario prescribe según el Código Procesal Penal. Además, la deuda tributaria asociada al delito prescribe en 6 años.",
+      "legal_ref": "Art. 200, inc. 2°, Código Tributario (DL-830) + CPP",
+      "next_node": "computo_plazo"
+    },
+    "plazo_6_reajuste": {
+      "id": "plazo_6_reajuste",
+      "type": "info",
+      "summary": "REAJUSTE DE MATERIA GRAVABLE: Plazo de prescripción = 6 años cuando se trata de reajustes de materia gravable que afectan múltiples períodos.",
+      "help": "Esta es una excepción específica del Art. 200, inc. 2° CT.",
+      "legal_ref": "Art. 200, inc. 2°, Código Tributario (DL-830)",
+      "next_node": "computo_plazo"
+    },
+    "computo_plazo": {
+      "id": "computo_plazo",
+      "type": "decision",
+      "question": "¿Ha transcurrido el plazo completo (3 o 6 años) SIN que el SII haya interrumpido la prescripción?",
+      "help": "La prescripción se INTERRUMPE por: (a) Notificación de requerimiento (Art. 62 CT), (b) Citación (Art. 63 CT), (c) Liquidación de oficio (Art. 64 CT), (d) Demanda judicial, (e) Reconocimiento de deuda por el contribuyente.",
+      "legal_ref": "Art. 201, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "plazo_cumplido_sin_interrupcion", "next_node": "result_prescrita"},
+        {"condition": "hubo_interrupcion", "next_node": "result_interrumpida"},
+        {"condition": "plazo_no_cumplido", "next_node": "result_no_prescrita"}
+      ]
+    },
+    "result_prescrita": {
+      "id": "result_prescrita",
+      "type": "result",
+      "summary": "LA DEUDA ESTÁ PRESCRITA. El SII ya NO puede exigir el pago. El contribuyente puede solicitar certificado de no adeudo o declaración de prescripción.",
+      "details": "Cuando prescribe la acción tributaria: (1) La obligación se EXTINGUE (Art. 200 CT). (2) El SII NO puede iniciar cobranza ejecutiva. (3) El contribuyente puede solicitar certificado de prescripción. (4) Si el SII embargó bienes, puede pedir levantamiento del embargo. (5) La prescripción puede alegarse en cualquier estado del procedimiento. IMPORTANTE: La prescripción debe alegarse EXPRESAMENTE. No opera de oficio. El contribuyente debe decir 'la deuda está prescrita' en su reclamación o en la cobranza ejecutiva.",
+      "warnings": ["La prescripción debe alegarse EXPRESAMENTE. El SII no la aplica de oficio.", "Si el contribuyente firmó un convenio de pago o reconoció la deuda, se interrumpió la prescripción."],
+      "next_steps": ["Solicitar certificado de prescripción al SII", "Si hay cobranza ejecutiva: alegar prescripción en la contradicción", "Solicitar levantamiento de embargos si los hubiere", "Guardar antecedentes del cómputo del plazo"],
+      "legal_refs": ["Art. 200 CT (prescripción)", "Art. 201 CT (interrupción)", "Art. 172 CT (cobranza ejecutiva)", "Art. 177 CT (retenciones de terceros)"]
+    },
+    "result_interrumpida": {
+      "id": "result_interrumpida",
+      "type": "result",
+      "summary": "LA PRESCRIPCIÓN FUE INTERRUMPIDA. El plazo se reinició desde la fecha de interrupción. Debe recalcular el plazo desde esa nueva fecha.",
+      "details": "El Art. 201 CT enumera las causales de interrupción: (1) Notificación de requerimiento (Art. 62 CT), (2) Citación para comparecer (Art. 63 CT), (3) Liquidación de oficio notificada (Art. 64 CT), (4) Demanda judicial, (5) Reconocimiento expreso de deuda por el contribuyente, (6) Firma de convenio de pago. Si hubo interrupción, el plazo COMIENZA A CORRER DE NUEVO desde la fecha de interrupción. Ejemplo: Si la obligación venció en enero 2020, prescribiría en enero 2023. Pero si el SII notificó un requerimiento en marzo 2022, el plazo se reinicia: prescribe en marzo 2025.",
+      "warnings": ["Verificar la FECHA EXACTA de la interrupción. El cómputo se hace desde la NOTIFICACIÓN, no desde la emisión del acto.", "Una interrupción válida requiere notificación válida (Art. 124 CT)."],
+      "next_steps": ["Identificar la fecha exacta de notificación del acto interruptivo", "Recalcular el nuevo plazo desde esa fecha", "Verificar si la notificación fue válida (puede atacarse por Art. 122 CT)", "Evaluar si conviene pagar, reclamar o esperar nueva prescripción"],
+      "legal_refs": ["Art. 201 CT (interrupción)", "Art. 124 CT (notificaciones)", "Art. 122 CT (reclamación por forma)"]
+    },
+    "result_no_prescrita": {
+      "id": "result_no_prescrita",
+      "type": "result",
+      "summary": "LA DEUDA NO ESTÁ PRESCRITA. Aún está dentro del plazo legal (3 o 6 años) y el SII puede exigirla. El contribuyente debe evaluar pagar, reclamar o convenir.",
+      "details": "El plazo aún no ha vencido. Opciones: (1) PAGAR: evita intereses y multas adicionales. (2) RECLAMAR: si está dentro de los plazos (15 días para liquidación, 30 días para vicios formales). (3) CONVENIO DE PAGO (Art. 56 CT): fracciona la deuda. (4) FACILIDADES PRO-PYME (Art. 192 CT): si califica como PRO-PYME. (5) RECTIFICACIÓN VOLUNTARIA (Art. 109 CT): si aún está a tiempo, puede ser más barato.",
+      "warnings": ["No espere a que prescriba sin verificar interrupciones. El SII suele interrumpir antes de que venza el plazo.", "El pago parcial NO interrumpe la prescripción (salvo que se reconozca la deuda total)."],
+      "next_steps": ["Evaluar si está a tiempo de rectificar voluntariamente (Art. 109 CT)", "Solicitar convenio de pago (Art. 56 CT)", "Verificar si califica como PRO-PYME para facilidades (Art. 192 CT)", "Si es liquidación de oficio: reclamar dentro de 15 días hábiles"],
+      "legal_refs": ["Art. 200 CT (prescripción)", "Art. 56 CT (convenio de pago)", "Art. 192 CT (facilidades PRO-PYME)", "Art. 109 CT (rectificación voluntaria)", "Art. 121 CT (reclamación)"]
+    }
+  }
+}

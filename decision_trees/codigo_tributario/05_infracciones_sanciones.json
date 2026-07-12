@@ -1,0 +1,109 @@
+{
+  "tree_id": "infracciones_sanciones",
+  "title": "Infracciones y Sanciones Tributarias",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 97-98",
+  "description": "Análisis de las infracciones tributarias más frecuentes, sus multas, y posibilidades de reducción o exención de sanciones.",
+  "tags": ["infraccion", "infracción", "multa", "sancion", "sanción", "pena", "tributaria", "art 97", "art 98", "grave", "leve"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El SII ha notificado al contribuyente una infracción o multa tributaria?",
+    "help": "El Art. 97 CT enumera las infracciones tributarias y sus multas. Es fundamental identificar el NÚMERO de infracción, porque cada una tiene régimen distinto.",
+    "legal_ref": "Art. 97, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "sii_notifico_multa", "next_node": "tipo_infraccion"},
+      {"condition": "no_multa", "next_node": "result_sin_multa"}
+    ]
+  },
+  "nodes": {
+    "result_sin_multa": {
+      "id": "result_sin_multa",
+      "type": "result",
+      "summary": "Sin multa notificada, el contribuyente debe prevenir infracciones. Las más frecuentes son: no declarar (N° 1), declarar tarde (N° 2), no pagar (N° 3), no dar aviso de cambio de domicilio (N° 5), no comparecer (N° 6).",
+      "details": "Prevención: (1) Declarar en plazo, (2) Pagar oportunamente, (3) Informar cambios de domicilio/comercio en 60 días (Art. 66 CT), (4) Atender citaciones y requerimientos, (5) Conservar documentos por 6 años (Art. 201 CT).",
+      "warnings": ["La multa por no declarar puede ser del 20% al 100% de la renta omitida."],
+      "next_steps": ["Calendario tributario en sii.cl", "Recordatorios automáticos", "Asesoría periódica"],
+      "legal_refs": ["Art. 97 CT (infracciones)", "Art. 66 CT (avisos de cambio)"]
+    },
+    "tipo_infraccion": {
+      "id": "tipo_infraccion",
+      "type": "decision",
+      "question": "¿Qué tipo de infracción le notificó el SII?",
+      "help": "Cada número del Art. 97 CT tiene multa distinta y posibilidades distintas de reducción.",
+      "legal_ref": "Art. 97, números 1° a 15°, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "no_declarar", "next_node": "result_n1_no_declarar"},
+        {"condition": "declarar_tarde", "next_node": "result_n2_tarde"},
+        {"condition": "no_pagar", "next_node": "result_n3_no_pagar"},
+        {"condition": "datos_falsos", "next_node": "result_n4_falsos"},
+        {"condition": "no_aviso_domicilio", "next_node": "result_n5_domicilio"},
+        {"condition": "no_comparecer", "next_node": "result_n6_no_comparecer"},
+        {"condition": "otra_infraccion", "next_node": "result_otra"}
+      ]
+    },
+    "result_n1_no_declarar": {
+      "id": "result_n1_no_declarar",
+      "type": "result",
+      "summary": "INFRACCIÓN N° 1: NO DECLARAR. Multa del 20% al 100% de la renta omitida o del impuesto debido. Puede reducirse al 10% si se rectifica voluntariamente (Art. 109 CT).",
+      "details": "Art. 97 N° 1 CT: Multa del 20% al 100% de la renta omitida. El porcentaje depende de la gravedad (intencionalidad, reincidencia, monto). REDUCCIÓN: Art. 109 CT permite reducir a 10% si se rectifica ANTES de que el SII inicie acciones. Si ya hay liquidación de oficio, NO aplica reducción.",
+      "warnings": ["Esta es la infracción más grave en monto.", "Si hay reincidencia, el SII aplica el 100%."],
+      "next_steps": ["Verificar si aún está a tiempo de rectificar (Art. 109)", "Si ya hay liquidación: reclamar por fondo (Art. 121)", "Demostrar buena fe si es primera vez"],
+      "legal_refs": ["Art. 97 N° 1 CT", "Art. 109 CT (rectificación voluntaria)", "Art. 59 CT (determinación de oficio)"]
+    },
+    "result_n2_tarde": {
+      "id": "result_n2_tarde",
+      "type": "result",
+      "summary": "INFRACCIÓN N° 2: DECLARAR FUERA DE PLAZO. Multa del 10% al 50% del impuesto debido. Puede reducirse al 5% con rectificación voluntaria (Art. 109 CT).",
+      "details": "Art. 97 N° 2 CT: Aplica cuando se declara después del plazo legal pero ANTES de que el SII actúe. La multa es menor que la N° 1 porque el contribuyente SÍ declaró, aunque tarde.",
+      "warnings": ["Si el SII ya determinó de oficio, aplica N° 1 (no declarar), no N° 2."],
+      "next_steps": ["Rectificar voluntariamente si aún está a tiempo (Art. 109)", "Pagar multa reducida", "Solicitar fraccionamiento si el monto es alto"],
+      "legal_refs": ["Art. 97 N° 2 CT", "Art. 109 CT"]
+    },
+    "result_n3_no_pagar": {
+      "id": "result_n3_no_pagar",
+      "type": "result",
+      "summary": "INFRACCIÓN N° 3: NO PAGAR EL TRIBUTO. Multa del 10% al 50% del impuesto debido. Si se paga antes del giro de oficio: multa del 5% (Art. 53 CT, intereses de mora).",
+      "details": "Art. 97 N° 3 CT: Aplica cuando se declaró pero NO se pagó. Además de la multa, se aplican intereses de mora (Art. 53 CT: IPC + 2% mensual). Si se paga voluntariamente antes del giro de oficio, la multa se reduce significativamente.",
+      "warnings": ["Los intereses de mora son ACUMULATIVOS y pueden superar el capital.", "Convenio de pago (Art. 56) NO elimina la multa, pero la fracciona."],
+      "next_steps": ["Pagar URGENTEMENTE para detener intereses", "Solicitar convenio de pago (Art. 56)", "Verificar si califica para PRO-PYME (Art. 192 CT: facilidades)"],
+      "legal_refs": ["Art. 97 N° 3 CT", "Art. 53 CT (intereses)", "Art. 56 CT (convenio)", "Art. 192 CT (facilidades PRO-PYME)"]
+    },
+    "result_n4_falsos": {
+      "id": "result_n4_falsos",
+      "type": "result",
+      "summary": "INFRACCIÓN N° 4: DECLARAR CON DATOS FALSOS O INEXACTOS. Multa del 20% al 100%. Si es doloso (intencional), puede configurar DELITO TRIBUTARIO (Art. 97 bis CT).",
+      "details": "Art. 97 N° 4 CT: Aplica cuando el contribuyente incluye datos que SABE son falsos. Diferencia con N° 1: aquí SÍ hay declaración, pero con información incorrecta. Si el SII demuestra dolo (intención de defraudar), puede derivar en denuncia penal.",
+      "warnings": ["ESTA INFRACCIÓN PUEDE DERIVAR EN DELITO TRIBUTARIO.", "Si hay facturación falsa, es grave."],
+      "next_steps": ["Asesoría legal INMEDIATA", "Evaluar si corresponde rectificación voluntaria", "NO declarar nada más sin asesoría"],
+      "legal_refs": ["Art. 97 N° 4 CT", "Art. 97 bis CT (delito tributario)"]
+    },
+    "result_n5_domicilio": {
+      "id": "result_n5_domicilio",
+      "type": "result",
+      "summary": "INFRACCIÓN N° 5: NO DAR AVISO DE CAMBIO DE DOMICILIO O RAZÓN SOCIAL. Multa de 1 a 5 UTA.",
+      "details": "Art. 97 N° 5 CT: El contribuyente debe informar cambio de domicilio, razón social o giro dentro de 60 días (Art. 66 CT). Es una infracción LEVE pero acumulable.",
+      "warnings": ["Infracción leve pero frecuente."],
+      "next_steps": ["Regularizar el cambio en sii.cl", "Pagar la multa (1-5 UTA)", "Inscribir domicilio actual correctamente"],
+      "legal_refs": ["Art. 97 N° 5 CT", "Art. 66 CT"]
+    },
+    "result_n6_no_comparecer": {
+      "id": "result_n6_no_comparecer",
+      "type": "result",
+      "summary": "INFRACCIÓN N° 6: NO COMPARECER A CITACIÓN DEL SII. Multa de 5 a 20 UTA.",
+      "details": "Art. 97 N° 6 CT: Aplica cuando el contribuyente no comparece a citación válida (Art. 63 CT). Además de la multa, el SII puede determinar de oficio (Art. 59 CT).",
+      "warnings": ["Además de la multa (5-20 UTA), el SII determinará de oficio.", "La determinación de oficio es más gravosa que la multa."],
+      "next_steps": ["Si aún está a tiempo: comparecer y explicar causa justificada", "Si ya pasó: reclamar la determinación de oficio (Art. 121)", "Evaluar si la citación tenía vicios formales (Art. 122)"],
+      "legal_refs": ["Art. 97 N° 6 CT", "Art. 63 CT (citación)", "Art. 59 CT (determinación de oficio)"]
+    },
+    "result_otra": {
+      "id": "result_otra",
+      "type": "result",
+      "summary": "Otras infracciones del Art. 97 CT: N° 7 (no presentar libro de remuneraciones, 1-5 UTA), N° 8 (no retener impuestos, 20%-100%), N° 9 (no entregar certificados, 1-5 UTA), N° 10 (no presentar balance, 5-20 UTA), N° 11 (obstaculizar fiscalización, 5-20 UTA), N° 12 (no conservar documentos, 1-5 UTA), N° 13 (no presentar antecedentes a terceros, 1-5 UTA), N° 14 (infracciones aduaneras), N° 15 (reincidencia: multa se duplica).",
+      "details": "Art. 97 CT contiene 15 números de infracciones. Para cada una, el SII debe notificar la resolución sancionatoria con el número específico. El contribuyente puede reclamar la sanción (Art. 121 CT) o solicitar rebaja por circunstancias atenuantes.",
+      "warnings": ["N° 15 (reincidencia): si comete la MISMA infracción dentro de 3 años, la multa se DUPLICA.", "Todas las sanciones son reclamables dentro de 15 días hábiles."],
+      "next_steps": ["Identificar el NÚMERO exacto de infracción", "Revisar si es primera vez o reincidencia", "Reclamar si hay errores", "Evaluar rectificación voluntaria si aplica"],
+      "legal_refs": ["Art. 97 CT (completo)", "Art. 121 CT (reclamación)"]
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "tree_id": "secrecy_tributario",
+  "title": "Secreto Tributario y Acceso a Información",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 35-37",
+  "description": "Deber de secreto de funcionarios del SII, excepciones, y derechos del contribuyente a acceder a su propia información tributaria.",
+  "tags": ["secreto", "tributario", "informacion", "información", "sii", "acceso", "confidencial", "reserva", "art 35", "art 36", "art 37"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿Qué situación involucra secreto o acceso a información tributaria?",
+    "help": "El secreto tributario protege la información del contribuyente. Pero hay excepciones importantes.",
+    "legal_ref": "Art. 35-37, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "funcionario_revelo", "next_node": "result_revelacion"},
+      {"condition": "contribuyente_acceder", "next_node": "result_acceso"},
+      {"condition": "tercero_solicita", "next_node": "result_tercero"},
+      {"condition": "cruce_informacion", "next_node": "result_cruce"}
+    ]
+  },
+  "nodes": {
+    "result_revelacion": {
+      "id": "result_revelacion",
+      "type": "result",
+      "summary": "REVELACIÓN INDEBIDA DEL SECRETO TRIBUTARIO (Art. 35 CT). Los funcionarios del SII están obligados a guardar reserva sobre antecedentes tributarios de contribuyentes. La violación es sancionada administrativa y penalmente.",
+      "details": "Art. 35 CT: Los funcionarios del SII no pueden revelar información tributaria de contribuyentes. EXCEPCIONES: (1) Cuando el contribuyente autoriza expresamente. (2) En procedimientos judiciales con orden del tribunal. (3) A otros organismos del Estado con fines específicos (Ley 20.285 sobre transparencia). (4) A la Fiscalía en investigación de delitos. SANCIONES: El funcionario puede ser sancionado disciplinariamente y penalmente (Art. 246 CP: revelación de secretos). El contribuyente afectado puede reclamar daños y perjuicios.",
+      "warnings": ["Si un funcionario del SII reveló información sin autorización, el contribuyente puede denunciarlo.", "La información de terceros tampoco puede ser revelada por el contribuyente en una fiscalización."],
+      "next_steps": ["Documentar la revelación (quién, cuándo, qué información)", "Presentar reclamación ante el SII", "Evaluar denuncia penal si es grave"],
+      "legal_refs": ["Art. 35 CT (secreto)", "Art. 246 CP (revelación de secretos)"]
+    },
+    "result_acceso": {
+      "id": "result_acceso",
+      "type": "result",
+      "summary": "DERECHO DEL CONTRIBUYENTE A ACCEDER A SU INFORMACIÓN (Art. 36 CT). Todo contribuyente tiene derecho a conocer su estado tributario, las actuaciones que lo afectan, y los antecedentes en poder del SII.",
+      "details": "Art. 36 CT: El contribuyente puede solicitar: (1) Copia de sus declaraciones. (2) Estado de deuda. (3) Actuaciones administrativas en su contra. (4) Liquidaciones y resoluciones. (5) Antecedentes de fiscalización. FORMA: Solicitud en sii.cl o en oficina del SII. Es GRATUITO. Plazo de respuesta: generalmente 20 días hábiles. Si el SII no responde: reclamación por omisión.",
+      "warnings": ["El acceso es SOLO a información propia. No se puede acceder a información de terceros."],
+      "next_steps": ["Solicitar información en sii.cl (Mi SII > Consultas)", "Si no responden: reclamación formal", "Guardar TODA la documentación recibida"],
+      "legal_refs": ["Art. 36 CT (acceso)", "Art. 120 CT (reposición por omisión)"]
+    },
+    "result_tercero": {
+      "id": "result_tercero",
+      "type": "result",
+      "summary": "ACCESO DE TERCEROS A INFORMACIÓN TRIBUTARIA (Art. 37 CT). Los terceros NO tienen acceso a la información tributaria de un contribuyente, salvo excepciones legales.",
+      "details": "Art. 37 CT enumera excepciones: (1) Herederos: acceso a información del causante para la sucesión. (2) Cónyuge: en procesos de divorcio o alimentos, con orden judicial. (3) Acreedores: en procesos de quiebra o ejecución, con orden judicial. (4) Organismos del Estado: con fines estadísticos o de control (sin identificación personal). (5) Tribunales: en procesos judiciales. REQUISITO COMÚN: orden judicial o autorización expresa del contribuyente.",
+      "warnings": ["El simple parentesco NO da derecho a acceder a información tributaria.", "Los bancos NO tienen acceso directo a la información del SII (salvo retenciones ordenadas por cobranza ejecutiva)."],
+      "next_steps": ["Verificar si existe orden judicial o autorización", "Solicitar al tribunal acceso si aplica", "Proteger información si el acceso es indebido"],
+      "legal_refs": ["Art. 37 CT (terceros)"]
+    },
+    "result_cruce": {
+      "id": "result_cruce",
+      "type": "result",
+      "summary": "CRUCE DE INFORMACIÓN DEL SII (Art. 35-37 CT). El SII puede cruzar información de contribuyentes entre sí para detectar inconsistencias. Esto NO viola el secreto porque es uso interno.",
+      "details": "El SII utiliza información de terceros para verificar declaraciones: (1) Si declaras ventas por $100M pero tus clientes informaron compras de $150M, el SII detecta la diferencia. (2) Si declaras gastos de arriendo pero el arrendador no informó ingresos por arriendo, el SII detecta. (3) El SII recibe información de bancos (Art. 85 LIR: retenciones, intereses). ESTO ES LEGAL: el SII usa la información internamente, no la revela a terceros. El contribuyente puede conocer que fue detectado por cruce cuando el SII le notifica la inconsistencia.",
+      "warnings": ["El cruce de información es la herramienta más poderosa del SII para detectar evasión.", "La inconsistencia por cruce genera requerimiento (Art. 62 CT) o determinación de oficio (Art. 59 CT)."],
+      "next_steps": ["Revisar declaraciones propias vs. información de contrapartes", "Rectificar si hay errores ANTES de que el SII actúe", "Mantener respaldo de toda la documentación"],
+      "legal_refs": ["Art. 35 CT (secreto, uso interno permitido)", "Art. 62 CT (requerimiento)", "Art. 59 CT (determinación de oficio)"]
+    }
+  }
+}

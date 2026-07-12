@@ -1,0 +1,75 @@
+{
+  "tree_id": "intereses_mora",
+  "title": "Intereses y Reajustes por Mora",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 53-54",
+  "description": "Cómputo de intereses y reajustes que se aplican cuando el contribuyente no paga oportunamente. Determina cuándo comienzan, cómo se calculan, y cómo detenerlos.",
+  "tags": ["interes", "interés", "mora", "reajuste", "ipc", "multa", "pago tardio", "pago tardío", "art 53", "art 54", "deuda", "tributaria"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El contribuyente tiene una deuda tributaria vencida y sin pagar?",
+    "help": "Los intereses de mora comienzan a correr desde el DÍA SIGUIENTE al vencimiento de la obligación.",
+    "legal_ref": "Art. 53, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "deuda_vencida", "next_node": "tipo_tributo_mora"},
+      {"condition": "no_deuda", "next_node": "result_sin_deuda"}
+    ]
+  },
+  "nodes": {
+    "result_sin_deuda": {
+      "id": "result_sin_deuda",
+      "type": "result",
+      "summary": "Sin deuda vencida, no hay intereses de mora. El contribuyente debe pagar dentro del plazo legal para evitarlos.",
+      "details": "Plazos generales: (1) IGC: abril del año siguiente. (2) IVA: mes siguiente al período. (3) Retenciones: mes siguiente. (4) Impuesto Adicional: similar al IGC. Pago anticipado o en plazo = cero intereses.",
+      "warnings": ["El pago en línea (sii.cl) tiene fecha de pago inmediata. El pago en banco puede demorar 1-2 días hábiles."],
+      "next_steps": ["Programar pagos automáticos", "Calendario tributario sii.cl"],
+      "legal_refs": ["Art. 53 CT", "Art. 65 CT (giro de oficio)"]
+    },
+    "tipo_tributo_mora": {
+      "id": "tipo_tributo_mora",
+      "type": "decision",
+      "question": "¿Qué tipo de tributo adeuda?",
+      "help": "El cálculo de intereses varía según el tributo.",
+      "legal_ref": "Art. 53 CT",
+      "branches": [
+        {"condition": "tributo_anual", "next_node": "calculo_anual"},
+        {"condition": "tributo_mensual", "next_node": "calculo_mensual"},
+        {"condition": "multa_sancion", "next_node": "calculo_multa"}
+      ]
+    },
+    "calculo_anual": {
+      "id": "calculo_anual",
+      "type": "info",
+      "summary": "TRIBUTOS ANUALES (IGC, IA, etc.): Interés = IPC acumulado desde vencimiento + 2% mensual (Art. 53 CT).",
+      "help": "El IPC se aplica al capital. El 2% mensual se aplica sobre capital + IPC acumulado. Son intereses compuestos.",
+      "legal_ref": "Art. 53, inc. 1°, CT",
+      "next_node": "result_formula"
+    },
+    "calculo_mensual": {
+      "id": "calculo_mensual",
+      "type": "info",
+      "summary": "TRIBUTOS MENSUALES (IVA, retenciones): Interés = IPC acumulado desde vencimiento + 2% mensual.",
+      "help": "Igual fórmula que anuales, pero el plazo de mora suele ser menor.",
+      "legal_ref": "Art. 53, inc. 1°, CT",
+      "next_node": "result_formula"
+    },
+    "calculo_multa": {
+      "id": "calculo_multa",
+      "type": "info",
+      "summary": "MULTAS Y SANCIONES: Interés = IPC acumulado desde vencimiento + 2% mensual (desde la firmeza de la resolución sancionatoria).",
+      "help": "Las multas comienzan a generar intereses desde su firmeza, no desde la infracción.",
+      "legal_ref": "Art. 53, inc. 2°, CT",
+      "next_node": "result_formula"
+    },
+    "result_formula": {
+      "id": "result_formula",
+      "type": "result",
+      "summary": "FÓRMULA DE INTERESES DE MORA (Art. 53 CT): Capital × (1 + IPC_acumulado) × (1 + 0.02)^n_meses − Capital. Donde: IPC_acumulado = variación del Índice de Precios al Consumidor desde el vencimiento. n_meses = meses completos de mora.",
+      "details": "EJEMPLO: Deuda de $1.000.000, venció hace 6 meses. IPC acumulado = 3%. Meses de mora = 6. Cálculo: $1.000.000 × 1.03 × (1.02)^6 = $1.000.000 × 1.03 × 1.126 = $1.159.780. Intereses = $159.780. IMPORTANTE: (1) El 2% mensual es compuesto. (2) El IPC se aplica primero, luego el 2%. (3) Los intereses son acumulativos: a más tiempo, más crecen exponencialmente. (4) Convenio de pago (Art. 56 CT) NO elimina intereses ya devengados, pero evita que sigan creciendo.",
+      "warnings": ["Los intereses pueden SUPERAR el capital en pocos años.", "El convenio de pago DETIENE el crecimiento pero NO borra intereses devengados.", "El pago parcial aplica primero a intereses, luego a capital (Art. 54 CT)."],
+      "next_steps": ["Calcular intereses exactos en sii.cl (consulta de deuda)", "Pagar lo antes posible para detener acumulación", "Solicitar convenio de pago (Art. 56 CT)", "Si es PRO-PYME: solicitar facilidades (Art. 192 CT)"],
+      "legal_refs": ["Art. 53 CT (intereses)", "Art. 54 CT (aplicación de pagos parciales)", "Art. 56 CT (convenio de pago)", "Art. 192 CT (facilidades PRO-PYME)"]
+    }
+  }
+}

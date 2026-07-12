@@ -1,0 +1,74 @@
+{
+  "tree_id": "convenio_pago",
+  "title": "Convenio de Pago y Facilidades",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 56, 192",
+  "description": "Procedimiento para fraccionar deudas tributarias. Convenio ordinario (Art. 56 CT) y facilidades especiales para PRO-PYME (Art. 192 CT). Requisitos, plazos y condiciones.",
+  "tags": ["convenio", "pago", "facilidades", "fraccionamiento", "deuda", "propyme", "pro-pyme", "pyme", "art 56", "art 192", "cuotas"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El contribuyente tiene una deuda tributaria y quiere fraccionarla?",
+    "help": "Existen dos regímenes: (1) Convenio ordinario (Art. 56 CT, para todos), (2) Facilidades especiales PRO-PYME (Art. 192 CT, solo empresas pequeñas).",
+    "legal_ref": "Art. 56 y Art. 192, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "quiere_convenio", "next_node": "es_propyme"},
+      {"condition": "no_deuda", "next_node": "result_sin_deuda"}
+    ]
+  },
+  "nodes": {
+    "result_sin_deuda": {
+      "id": "result_sin_deuda",
+      "type": "result",
+      "summary": "Sin deuda tributaria, no aplica convenio de pago. El contribuyente debe mantenerse al día.",
+      "details": "Convenio de pago solo aplica a deudas EXISTENTES y vencidas. No se puede convenir deudas futuras.",
+      "next_steps": ["Programar pagos automáticos", "Revisar calendario tributario"],
+      "legal_refs": ["Art. 56 CT"]
+    },
+    "es_propyme": {
+      "id": "es_propyme",
+      "type": "decision",
+      "question": "¿El contribuyente califica como PRO-PYME (Art. 14 letra D LIR)?",
+      "help": "PRO-PYME: empresas con ventas anuales ≤ 100.000 UF, capital ≤ 5.000 UF, y otros requisitos. Las facilidades PRO-PYME son MUCHO más favorables.",
+      "legal_ref": "Art. 14 letra D LIR + Art. 192 CT",
+      "branches": [
+        {"condition": "es_propyme", "next_node": "facilidades_propyme"},
+        {"condition": "no_es_propyme", "next_node": "convenio_ordinario"}
+      ]
+    },
+    "facilidades_propyme": {
+      "id": "facilidades_propyme",
+      "type": "info",
+      "summary": "FACILIDADES PRO-PYME (Art. 192 CT): Regimen más favorable para empresas pequeñas.",
+      "help": "Art. 192 CT otorga beneficios específicos a PRO-PYME: cuotas hasta 18 meses, pago inicial máximo 5%, sin intereses sobre cuotas.",
+      "legal_ref": "Art. 192 CT",
+      "next_node": "result_facilidades_propyme"
+    },
+    "convenio_ordinario": {
+      "id": "convenio_ordinario",
+      "type": "info",
+      "summary": "CONVENIO ORDINARIO (Art. 56 CT): Aplica a TODOS los contribuyentes, personas naturales y jurídicas.",
+      "help": "Art. 56 CT permite fraccionar deudas en cuotas mensuales con intereses.",
+      "legal_ref": "Art. 56 CT",
+      "next_node": "result_convenio_ordinario"
+    },
+    "result_facilidades_propyme": {
+      "id": "result_facilidades_propyme",
+      "type": "result",
+      "summary": "FACILIDADES PRO-PYME (Art. 192 CT): (1) Cuotas hasta 18 meses. (2) Pago inicial NO puede superar el 5% de la deuda total. (3) NO se aplican intereses sobre las cuotas del convenio. (4) Se condonan intereses si se paga dentro del plazo. (5) El convenio se solicita en el SII.",
+      "details": "REQUISITOS PRO-PYME: (a) Ser contribuyente del Art. 14 letra D LIR (ventas ≤ 100.000 UF, capital ≤ 5.000 UF, hasta 50 trabajadores dependientes). (b) Tener deuda tributaria vencida. (c) No tener convenio anterior incumplido. (d) No estar en quiebra ni liquidación. BENEFICIOS: (1) Plazo: hasta 18 meses. (2) Pago inicial: máximo 5%. (3) Sin intereses sobre cuotas. (4) Si paga todas las cuotas, se condonan intereses de mora. (5) NO se aplica multa por no declarar si se regulariza dentro del convenio.",
+      "warnings": ["Si se incumple el convenio, los beneficios se pierden y se revierte la condonación.", "El pago inicial de 5% es MÁXIMO, no mínimo. Puede ser 0% en casos especiales."],
+      "next_steps": ["Verificar calidad de PRO-PYME en sii.cl", "Solicitar facilidades en oficina SII o en línea", "Preparar estado de deuda", "Cumplir estrictamente las cuotas"],
+      "legal_refs": ["Art. 192 CT (facilidades PRO-PYME)", "Art. 14 letra D LIR (definición PRO-PYME)"]
+    },
+    "result_convenio_ordinario": {
+      "id": "result_convenio_ordinario",
+      "type": "result",
+      "summary": "CONVENIO ORDINARIO (Art. 56 CT): (1) Fraccionamiento en cuotas mensuales. (2) Plazo: generalmente hasta 24-36 meses (según política del SII). (3) Intereses: se aplican sobre el saldo. (4) Pago inicial: generalmente 10-20% de la deuda. (5) Garantía: puede requerirse aval o garantía bancaria.",
+      "details": "REQUISITOS: (a) Deuda tributaria vencida. (b) No tener convenio anterior incumplido. (c) Presentar solicitud formal. CONDICIONES: (1) El SII fija el número de cuotas y el monto según la capacidad de pago del contribuyente. (2) Se aplican intereses sobre el saldo deudor (generalmente tasa de interés bancario o similar). (3) Si se incumple una cuota, el convenio se rescinde y se ejecuta la deuda completa. (4) El SII puede exigir garantía (aval, hipoteca, etc.). IMPORTANTE: El convenio ordinario NO condona intereses ni multas. Solo las fracciona.",
+      "warnings": ["El incumplimiento de UNA cuota rescinde TODO el convenio y se ejecuta la deuda completa.", "Los intereses siguen corriendo sobre el saldo."],
+      "next_steps": ["Calcular capacidad de pago mensual", "Solicitar convenio en el SII", "Evaluar si es mejor pagar de contado (evita intereses futuros)", "Cumplir estrictamente las cuotas"],
+      "legal_refs": ["Art. 56 CT (convenio de pago)", "Art. 53 CT (intereses)"]
+    }
+  }
+}

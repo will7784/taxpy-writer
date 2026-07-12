@@ -1,0 +1,89 @@
+{
+  "tree_id": "renta_presunta",
+  "title": "Determinación de Oficio y Renta Presunta",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 59-61",
+  "description": "Procedimiento mediante el cual el SII determina la renta o deuda tributaria cuando el contribuyente no declara, declara de forma incompleta o inexacta, o no atiende requerimientos.",
+  "tags": ["renta presunta", "renta deudora", "determinacion oficio", "determinación oficio", "presunta", "renta ficticia", "sii", "art 59", "art 60", "art 61"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El SII ha determinado la renta o deuda de oficio (sin declaración del contribuyente o contra la declaración presentada)?",
+    "help": "La determinación de oficio es el acto más gravoso del SII. Ocurre cuando el contribuyente no declara, declara mal, o no responde requerimientos. El Art. 59 CT enumera las causales.",
+    "legal_ref": "Art. 59, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "sii_determino_oficio", "next_node": "causal_determinacion"},
+      {"condition": "no_determinacion", "next_node": "result_sin_determinacion"}
+    ]
+  },
+  "nodes": {
+    "result_sin_determinacion": {
+      "id": "result_sin_determinacion",
+      "type": "result",
+      "summary": "Sin determinación de oficio, el contribuyente opera bajo el régimen de declaración jurada. Debe declarar y pagar oportunamente para evitar que el SII active el Art. 59 CT.",
+      "details": "El contribuyente debe: (1) Declarar dentro de los plazos legales (generalmente abril de cada año para el IGC, mes siguiente para IVA, etc.). (2) Pagar oportunamente. (3) Atender requerimientos del SII. (4) Rectificar si detecta errores en declaraciones anteriores (Art. 125 CT). Si el SII detecta inconsistencias, primero emite requerimientos (Art. 62 CT) y citaciones (Art. 63 CT) antes de determinar de oficio.",
+      "warnings": ["La omisión de declaración es la causal más frecuente de determinación de oficio."],
+      "next_steps": ["Verificar plazos de declaración vigentes", "Rectificar si hay errores en declaraciones pasadas", "Responder requerimientos del SII"],
+      "legal_refs": ["Art. 59 CT (determinación de oficio)", "Art. 62 CT (requerimientos)", "Art. 125 CT (rectificación de declaraciones)"]
+    },
+    "causal_determinacion": {
+      "id": "causal_determinacion",
+      "type": "decision",
+      "question": "¿Cuál fue la causal de la determinación de oficio?",
+      "help": "El Art. 59 CT enumera 5 causales específicas. Identificar la causal es clave para la defensa.",
+      "legal_ref": "Art. 59, incisos 1° a 5°, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "no_declaro", "next_node": "result_no_declaro"},
+        {"condition": "declaro_incompleta", "next_node": "result_incompleta"},
+        {"condition": "no_atendio_requerimiento", "next_node": "result_no_atendio"},
+        {"condition": "operaciones_ficticias", "next_node": "result_ficticias"},
+        {"condition": "retiro_utilidades_sociedad", "next_node": "result_retiro"}
+      ]
+    },
+    "result_no_declaro": {
+      "id": "result_no_declaro",
+      "type": "result",
+      "summary": "CAUSAL: NO DECLARÓ (Art. 59, inc. 1° CT). El contribuyente omitió presentar la declaración de renta o de IVA. El SII determina la renta presunta con base en: (a) antecedentes que obren en su poder, (b) información de terceros (bancos, contrapartes), (c) rentas de años anteriores reajustadas.",
+      "details": "El Art. 59, inc. 1° CT establece que el SII puede determinar de oficio cuando el contribuyente no presenta la declaración dentro del plazo legal. El SII usará TODA la información disponible: estados de cuenta bancaria, facturas de compra/venta informadas por terceros, patrimonio declarado en años anteriores, etc. La renta presunta suele ser MAYOR que la real porque el SII parte de una base amplia. El contribuyente puede: (1) Rectificar la declaración (Art. 125 CT) si aún está a tiempo, (2) Reclamar la determinación de oficio (Art. 121 CT), (3) Presentar la declaración tardía con multa reducida (Art. 109 CT, rectificación voluntaria).",
+      "warnings": ["La declaración tardía con multa reducida (Art. 109) es mucho más barata que aceptar la determinación de oficio.", "La determinación de oficio puede generar multa del 20% al 100% de la renta omitida (Art. 97 N° 1 CT)."],
+      "next_steps": ["Evaluar si aún está a tiempo de declarar tardíamente con multa reducida (Art. 109)", "Si ya hay determinación de oficio: reclamar por fondo (Art. 121) presentando la declaración correcta", "Reunir TODA la documentación que sustente la renta real (gastos, costos, créditos)"],
+      "legal_refs": ["Art. 59, inc. 1° CT (no declaración)", "Art. 97 N° 1 CT (multa por no declarar)", "Art. 109 CT (rectificación voluntaria con multa reducida)", "Art. 121 CT (reclamación)", "Art. 125 CT (rectificación de declaraciones)"]
+    },
+    "result_incompleta": {
+      "id": "result_incompleta",
+      "type": "result",
+      "summary": "CAUSAL: DECLARACIÓN INCOMPLETA O INEXACTA (Art. 59, inc. 2° CT). El contribuyente presentó declaración pero omitió rentas, incluyó gastos indebidos, o cometió errores que afectan la base imponible. El SII puede corregirla de oficio.",
+      "details": "El Art. 59, inc. 2° CT permite al SII corregir declaraciones que contengan omisiones, errores o inexactitudes. Esto incluye: (a) Rentas omitidas (ventas no declaradas, ingresos por honorarios no informados), (b) Gastos indebidos (gastos de representación, boletas de honorarios de ciertos profesionales - Art. 21 LIR), (c) Créditos improcedentes, (d) Errores aritméticos en la declaración. El contribuyente puede: (1) Rectificar la declaración (Art. 125 CT), (2) Reclamar si la corrección del SII es incorrecta (Art. 121 CT).",
+      "warnings": ["La rectificación de la propia declaración por el contribuyente (Art. 125) tiene multa reducida. La corrección de oficio por el SII tiene multa plena.", "El SII puede usar información cruzada: si el contribuyente declaró $100 millones en ventas pero sus clientes informaron $150 millones, el SII corregirá al alza."],
+      "next_steps": ["Rectificar la declaración antes de que el SII determine de oficio (si aún está a tiempo)", "Si ya hay determinación: reclamar presentando la declaración rectificada + antecedentes", "Verificar cruce de información con clientes/proveedores"],
+      "legal_refs": ["Art. 59, inc. 2° CT (declaración incompleta)", "Art. 125 CT (rectificación)", "Art. 97 N° 1 CT (multa)", "Art. 21 LIR (gastos rechazados)"]
+    },
+    "result_no_atendio": {
+      "id": "result_no_atendio",
+      "type": "result",
+      "summary": "CAUSAL: NO ATENDIÓ REQUERIMIENTO O CITACIÓN (Art. 59, inc. 3° CT). El contribuyente no respondió requerimientos de antecedentes (Art. 62 CT) o no compareció a citación (Art. 63 CT). El SII determina de oficio usando los antecedentes de que disponga.",
+      "details": "El Art. 59, inc. 3° CT es una causal subsidiaria: el SII primero debe requerir (Art. 62) o citar (Art. 63). Si el contribuyente no atiende, recién entonces puede determinar de oficio. Esto significa que SIEMPRE debe existir un requerimiento o citación PREVIO a la determinación. El contribuyente puede defenderse argumentando: (a) El requerimiento no fue notificado válidamente, (b) La citación tenía vicios formales, (c) Existe causa justificada para no haber atendido (enfermedad grave, desastre natural, etc.).",
+      "warnings": ["NO ignore requerimientos ni citaciones del SII. Es la puerta de entrada a la determinación de oficio.", "Si no pudo atender por causa justificada, debe acreditarlo DOCUMENTALMENTE."],
+      "next_steps": ["Verificar si existió requerimiento/citación previa válida", "Si no fue notificado válidamente: reclamar por forma (Art. 122 CT)", "Si hubo causa justificada: presentar antecedentes médicos, certificados, etc.", "Reclamar la determinación por fondo (Art. 121 CT)"],
+      "legal_refs": ["Art. 59, inc. 3° CT (no atendió requerimiento)", "Art. 62 CT (requerimientos)", "Art. 63 CT (citaciones)", "Art. 121 CT (reclamación por fondo)", "Art. 122 CT (reclamación por forma)"]
+    },
+    "result_ficticias": {
+      "id": "result_ficticias",
+      "type": "result",
+      "summary": "CAUSAL: OPERACIONES FICTICIAS O INEXISTENTES (Art. 59, inc. 4° CT). El SII determinó de oficio porque detectó que las operaciones declaradas son ficticias, inexistentes, o con partes relacionadas sin sustancia económica.",
+      "details": "El Art. 59, inc. 4° CT es la causal más grave. Se aplica cuando: (a) El contribuyente declara operaciones con empresas fantasmas (empresas de papel), (b) Existen facturas de compra sin respaldo real (facturación falsa), (c) Hay operaciones con partes relacionadas sin sustancia económica (precios de transferencia fraudulentos), (d) Se declaran gastos por servicios inexistentes. Esta causal puede generar no solo determinación de oficio sino también: multa del 50% al 100% de la renta omitida (Art. 97 N° 1 CT), sanción de inhabilidad para obtener beneficios tributarios, e incluso denuncia penal por delito tributario (Art. 97 bis CT). DEFENSA: El contribuyente debe demostrar la REALIDAD de las operaciones: contratos, transferencias bancarias, actas de entrega, correspondencia, etc.",
+      "warnings": ["ESTA CAUSAL ES GRAVE. Puede derivar en denuncia penal por delito tributario (Art. 97 bis CT).", "El SII comparte información con la Fiscalía cuando detecta operaciones ficticias."],
+      "next_steps": ["Asistir con abogado penalista + tributario URGENTEMENTE", "Reunir TODA la documentación que acredite la realidad de las operaciones", "Evaluar si corresponde acogerse a procedimiento simplificado de pago (Art. 109 bis CT)", "NO declarar ni firmar nada sin asesoría legal"],
+      "legal_refs": ["Art. 59, inc. 4° CT (operaciones ficticias)", "Art. 97 N° 1 CT (multa grave)", "Art. 97 bis CT (delito tributario)", "Art. 109 bis CT (procedimiento simplificado)"]
+    },
+    "result_retiro": {
+      "id": "result_retiro",
+      "type": "result",
+      "summary": "CAUSAL: RETIRO DE UTILIDADES DE SOCIEDAD (Art. 59, inc. 5° CT). El SII determinó renta presunta porque los socios retiraron utilidades de una sociedad sin que ésta hubiera declarado o pagado el impuesto correspondiente.",
+      "details": "El Art. 59, inc. 5° CT se aplica cuando: (a) Una sociedad no declara ni paga impuesto a la renta, (b) Los socios retiran utilidades (dividendos, retiros, distribuciones), (c) El SII atribuye a los socios la renta proporcional que les corresponde. El socio puede reclamar demostrando: (1) Que la sociedad SÍ declaró y pagó, (2) Que el retiro NO corresponde a utilidades (es un préstamo, reintegro de capital, etc.), (3) Que el monto atribuido es incorrecto.",
+      "warnings": ["Esta causal afecta a los SOCIOS, no solo a la sociedad.", "Si la sociedad está en quiebra o disuelta, los socios pueden ser responsables solidarios."],
+      "next_steps": ["Verificar si la sociedad declaró y pagó el impuesto correspondiente", "Acreditar la naturaleza real de los retiros (préstamo vs. utilidad)", "Reclamar ante el SII con antecedentes contables de la sociedad"],
+      "legal_refs": ["Art. 59, inc. 5° CT (retiro de utilidades)", "Art. 17 N° 5 LIR (retiros de sociedades)", "Art. 121 CT (reclamación)"]
+    }
+  }
+}

@@ -1,0 +1,109 @@
+{
+  "tree_id": "liquidacion_giro",
+  "title": "Liquidación y Giro de Oficio del SII",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 64-65",
+  "description": "Procedimiento mediante el cual el SII liquida tributos de oficio y gira la orden de pago. Analiza requisitos, plazos de pago, garantías y recursos.",
+  "tags": ["liquidacion", "liquidación", "giro", "oficio", "determinacion", "determinación", "pago", "tributos", "deuda", "sii", "art 64", "art 65"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El SII ha emitido una liquidación de oficio?",
+    "help": "La liquidación de oficio es el acto por el cual el SII determina la deuda tributaria cuando el contribuyente no presenta declaración, la presenta en forma incorrecta, o no paga. Se diferencia de la declaración jurada del contribuyente.",
+    "legal_ref": "Art. 64, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "sii_emitio_liquidacion", "next_node": "notificacion_valida"},
+      {"condition": "no_liquidacion", "next_node": "result_sin_liquidacion"}
+    ]
+  },
+  "nodes": {
+    "result_sin_liquidacion": {
+      "id": "result_sin_liquidacion",
+      "type": "result",
+      "summary": "Sin liquidación de oficio emitida, el contribuyente debe atender únicamente sus obligaciones de declaración y pago voluntario. El SII puede iniciar el procedimiento de determinación de oficio si detecta incumplimientos.",
+      "details": "Mientras no exista liquidación de oficio, el contribuyente opera en el régimen de declaración jurada. Debe: (1) Declarar en plazos legales, (2) Pagar oportunamente, (3) Conservar documentación por 6 años (Art. 201 CT). El SII puede iniciar fiscalización preventiva o de oficio si detecta inconsistencias.",
+      "warnings": ["No espere la liquidación de oficio para regularizar. La determinación de oficio es más gravosa que la declaración voluntaria."],
+      "next_steps": ["Verificar estado de declaraciones en sii.cl", "Regularizar si hay declaraciones omitidas", "Mantener documentación ordenada"],
+      "legal_refs": ["Art. 64 CT (liquidación de oficio)", "Art. 65 CT (giro de oficio)", "Art. 201 CT (plazo de conservación de documentos)"]
+    },
+    "notificacion_valida": {
+      "id": "notificacion_valida",
+      "type": "decision",
+      "question": "¿La liquidación fue notificada válidamente al contribuyente o su representante legal?",
+      "help": "La liquidación debe notificarse. Si no fue notificada, NO comienzan a correr los plazos para pagar ni para reclamar. El Art. 124 CT regula las notificaciones.",
+      "legal_ref": "Art. 64 CT + Art. 124 CT (notificaciones)",
+      "branches": [
+        {"condition": "notificacion_valida", "next_node": "plazo_pago"},
+        {"condition": "no_notificada", "next_node": "result_no_notificada"}
+      ]
+    },
+    "result_no_notificada": {
+      "id": "result_no_notificada",
+      "type": "result",
+      "summary": "Si la liquidación NO fue notificada válidamente, los plazos de pago y reclamación NO han comenzado a correr. El contribuyente puede exigir notificación formal o reclamar la inobservancia de formalidades.",
+      "details": "El Art. 124 CT establece las formas de notificación válida: personal, por correo certificado, edictos (en casos especiales), o publicación en el Diario Oficial. Si la liquidación aparece solo en el portal del SII sin notificación formal, hay discusión jurisprudencial sobre si constituye notificación válida. Criterio recomendable: exigir notificación formal para proteger los plazos.",
+      "warnings": ["El solo hecho de que aparezca en el portal del SII NO es necesariamente notificación válida. Recomendación: solicitar notificación formal por escrito."],
+      "next_steps": ["Verificar forma de notificación recibida", "Solicitar al SII notificación formal si no existe", "Presentar reclamación por inobservancia de formalidades dentro de 30 días (Art. 122 CT)"],
+      "legal_refs": ["Art. 64 CT (liquidación)", "Art. 124 CT (notificaciones)", "Art. 122 CT (reclamación por formalidades)"]
+    },
+    "plazo_pago": {
+      "id": "plazo_pago",
+      "type": "decision",
+      "question": "¿Han transcurrido más de 15 días hábiles desde la notificación sin que el contribuyente haya pagado ni reclamado?",
+      "help": "El plazo para pagar o reclamar la liquidación es de 15 días hábiles desde la notificación. Si pasa ese plazo, la liquidación queda 'firme' y el SII puede iniciar cobranza ejecutiva.",
+      "legal_ref": "Art. 65, inciso 1°, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "dentro_plazo", "next_node": "opciones_contribuyente"},
+        {"condition": "plazo_vencido", "next_node": "result_plazo_vencido"}
+      ]
+    },
+    "result_plazo_vencido": {
+      "id": "result_plazo_vencido",
+      "type": "result",
+      "summary": "LA LIQUIDACIÓN ESTÁ FIRME. Han transcurrido más de 15 días hábiles sin pago ni reclamación. El SII puede iniciar cobranza ejecutiva (embargo de bienes, retenciones de terceros, etc.). Aún existe la posibilidad de convenio de pago (Art. 56 CT) o reclamación por vicios formales de notificación.",
+      "details": "Una liquidación firme tiene los siguientes efectos: (1) El SII puede embargar bienes del contribuyente (Art. 172 CT). (2) Pueden retenerse fondos de terceros deudores del contribuyente (Art. 177 CT). (3) Se pueden constituir hipotecas legales sobre bienes raíces (Art. 173 CT). (4) El contribuyente pierde el derecho a reclamar el fondo (el monto), pero PUEDE reclamar vicios formales de notificación (Art. 122 CT). (5) Puede solicitar convenio de pago (Art. 56 CT) o facilidades de pago (Art. 192 CT si es PRO-PYME).",
+      "warnings": ["Aunque la liquidación esté firme, si la notificación fue defectuosa, puede reclamarse dentro de 30 días de conocerse el vicio.", "El convenio de pago NO suspende la cobranza ejecutiva; debe solicitarse ANTES del remate."],
+      "next_steps": ["Verificar si la notificación fue válida (puede ser vía de ataque)", "Solicitar convenio de pago en el SII", "Evaluar si califica para PRO-PYME (Art. 14 D LIR) y facilidades (Art. 192 CT)", "Asistir con abogado tributario URGENTEMENTE"],
+      "legal_refs": ["Art. 65 CT (giro de oficio y firmeza)", "Art. 56 CT (convenio de pago)", "Art. 172-177 CT (cobranza ejecutiva)", "Art. 192 CT (facilidades PRO-PYME)", "Art. 122 CT (reclamación por formalidades)"]
+    },
+    "opciones_contribuyente": {
+      "id": "opciones_contribuyente",
+      "type": "decision",
+      "question": "¿Qué quiere hacer el contribuyente con la liquidación de oficio?",
+      "help": "Dentro de los 15 días hábiles, el contribuyente tiene TRES opciones: pagar, reclamar, o pagar bajo protesta.",
+      "legal_ref": "Art. 65 CT + Art. 120-122 CT",
+      "branches": [
+        {"condition": "pagar", "next_node": "result_pagar"},
+        {"condition": "reclamar", "next_node": "result_reclamar"},
+        {"condition": "pagar_protesta", "next_node": "result_pagar_protesta"}
+      ]
+    },
+    "result_pagar": {
+      "id": "result_pagar",
+      "type": "result",
+      "summary": "PAGO VOLUNTARIO DE LA LIQUIDACIÓN. Si el contribuyente está de acuerdo con la liquidación, debe pagar dentro de los 15 días hábiles. El pago puede realizarse en línea (sii.cl), en bancos autorizados, o con convenio de pago.",
+      "details": "Al pagar la liquidación dentro del plazo: (1) No se generan intereses ni multas adicionales. (2) El crédito tributario se extingue (Art. 81 CT). (3) No hay necesidad de presentar recurso. (4) Si el monto es alto, puede solicitar convenio de pago (Art. 56 CT) aun dentro del plazo de 15 días. IMPORTANTE: El pago NO implica aceptación de la determinación de renta para años futuros. Cada año tributario es independiente.",
+      "warnings": ["Verifique que la liquidación NO contenga errores aritméticos antes de pagar. El SII también se equivoca.", "Conserve el comprobante de pago por 6 años."],
+      "next_steps": ["Revisar liquidación: base imponible, tasa aplicada, créditos, reajustes", "Pagar en sii.cl o banco autorizado", "Solicitar convenio de pago si el monto es alto", "Guardar comprobante"],
+      "legal_refs": ["Art. 65 CT (giro de oficio)", "Art. 81 CT (extinción de la obligación)", "Art. 56 CT (convenio de pago)"]
+    },
+    "result_reclamar": {
+      "id": "result_reclamar",
+      "type": "result",
+      "summary": "RECLAMACIÓN DE LA LIQUIDACIÓN. El contribuyente puede reclamar la liquidación dentro de 15 días hábiles desde la notificación. La reclamación puede ser: (a) por fondo (discrepo del monto), (b) por forma (vicios de notificación o procedimiento), o (c) mixta.",
+      "details": "RECLAMACIÓN POR FONDO (Art. 121 CT): Se impugna la determinación de la renta, la tasa aplicada, los créditos denegados, etc. Debe presentarse ante el Director Regional del SII. El plazo es de 15 días hábiles. El SII tiene 60 días para resolver. Si no responde, se entiende rechazada (Art. 121, inc. 2°). RECLAMACIÓN POR FORMA (Art. 122 CT): Se impugna vicios del procedimiento (mala notificación, falta de citación, plazos incumplidos). El plazo es de 30 días desde el conocimiento del vicio. IMPORTANTE: Reclamar por fondo SUSPENDE el pago hasta que el SII resuelva (Art. 121, inc. 3°).",
+      "warnings": ["NO confundir reclamación con recurso de reposición. La reposición (Art. 120) va contra actos administrativos distintos de la liquidación.", "La reclamación por fondo debe ser presentada con ANTECEDENTES que sustenten la discrepancia. No basta con decir 'estoy en desacuerdo'."],
+      "next_steps": ["Redactar reclamación con argumentos legales y antecedentes de respaldo", "Presentar en el SII dentro de 15 días hábiles", "Solicitar suspensión del pago (si es reclamación por fondo)", "Preparar para segunda instancia (TTA) si el SII rechaza"],
+      "legal_refs": ["Art. 121 CT (reclamación por fondo)", "Art. 122 CT (reclamación por forma)", "Art. 120 CT (recurso de reposición)", "Art. 65 CT (plazo de 15 días)"]
+    },
+    "result_pagar_protesta": {
+      "id": "result_pagar_protesta",
+      "type": "result",
+      "summary": "PAGO BAJO PROTESTA. El contribuyente paga la liquidación pero deja constancia de que NO está de acuerdo. Esto permite: (a) evitar cobranza ejecutiva, (b) mantener vivo el derecho a reclamar el fondo más adelante (dentro de 3 años por prescripción).",
+      "details": "El pago bajo protesta es una figura procesal que consiste en pagar el tributo pero hacer constar por escrito que se paga sin reconocer la deuda. Efectos: (1) Se evita la firmeza de la liquidación para efectos de cobranza. (2) El contribuyente conserva el derecho a reclamar el fondo (el monto pagado) dentro del plazo de prescripción (3 años desde el pago, Art. 200 CT). (3) El SII debe resolver la reclamación como si no se hubiera pagado. IMPORTANTE: El pago bajo protesta debe hacerse EXPLÍCITO. No basta con decirlo verbalmente. Debe constar por escrito en el mismo acto de pago o en reclamación concurrente.",
+      "warnings": ["El pago bajo protesta NO es lo mismo que 'pagar y luego reclamar'. Debe hacerse de forma explícita y documentada.", "Si no se deja constancia escrita de la protesta, el pago se considera conforme."],
+      "next_steps": ["Realizar el pago en sii.cl o banco", "Presentar simultáneamente escritorio de pago bajo protesta", "Presentar reclamación por fondo dentro de 15 días", "Guardar TODA la documentación"],
+      "legal_refs": ["Art. 65 CT (giro de oficio)", "Art. 121 CT (reclamación)", "Art. 200 CT (prescripción de 3 años)", "Art. 81 CT (pago y extinción)"]
+    }
+  }
+}

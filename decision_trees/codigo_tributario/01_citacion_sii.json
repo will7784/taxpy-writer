@@ -1,0 +1,107 @@
+{
+  "tree_id": "citacion_sii",
+  "title": "Citación del SII para fiscalizar",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 63",
+  "description": "Procedimiento de citación del Servicio de Impuestos Internos para iniciar una fiscalización. Determina obligaciones del contribuyente, plazos y consecuencias de no comparecer.",
+  "tags": ["citacion", "citación", "fiscalizacion", "fiscalización", "sii", "requerimiento", "comparecencia", "investigación", "art 63"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿El SII ha citado al contribuyente para comparecer?",
+    "help": "La citación es el acto formal mediante el cual el SII requiere al contribuyente que se presente ante la administración para fines de fiscalización. No es lo mismo que un requerimiento de información por escrito.",
+    "legal_ref": "Art. 63, inciso 1°, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "sii_citado", "next_node": "forma_citacion"},
+      {"condition": "no_citado", "next_node": "result_sin_citacion"}
+    ]
+  },
+  "nodes": {
+    "result_sin_citacion": {
+      "id": "result_sin_citacion",
+      "type": "result",
+      "summary": "Sin citación formal del SII, el contribuyente no tiene obligación de comparecer ante la administración para fines de fiscalización. El SII puede requerir antecedentes por escrito (Art. 62 CT), pero eso NO es una citación.",
+      "details": "El Art. 63 CT regula específicamente la citación para comparecer. Mientras no exista este acto, el contribuyente mantiene su posición pasiva. Sin embargo, el SII puede utilizar otros medios de investigación (Art. 60 CT: información de terceros, requerimientos a bancos, etc.). Recomendación: si recibe cualquier comunicación del SII, verificar si es una citación (debe contar con firma del Director Regional o quien estime en su representación).",
+      "warnings": ["No confundir 'requerimiento de antecedentes' (Art. 62 CT) con 'citación para comparecer' (Art. 63 CT). Son actos distintos con consecuencias diferentes."],
+      "next_steps": ["Verificar si existe comunicación escrita del SII", "Diferenciar si es requerimiento de información (Art. 62) o citación (Art. 63)", "Consultar con abogado tributario si hay dudas"],
+      "legal_refs": ["Art. 60 CT (facultades de fiscalización)", "Art. 62 CT (requerimiento de antecedentes)", "Art. 63 CT (citación para comparecer)"]
+    },
+    "forma_citacion": {
+      "id": "forma_citacion",
+      "type": "decision",
+      "question": "¿La citación consta por escrito y está firmada por el Director Regional o quien esté en su representación?",
+      "help": "La citación DEBE cumplir requisitos formales. Si no los cumple, puede ser impugnada por inobservancia de formalidades esenciales (Art. 122 CT). El director regional es quien dirige la oficina territorial del SII.",
+      "legal_ref": "Art. 63, inciso 2°, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "forma_correcta", "next_node": "plazo_comparecencia"},
+        {"condition": "forma_defectuosa", "next_node": "result_forma_defectuosa"}
+      ]
+    },
+    "result_forma_defectuosa": {
+      "id": "result_forma_defectuosa",
+      "type": "result",
+      "summary": "La citación presenta vicios formales. El contribuyente puede NO comparecer e impugnar el acto por inobservancia de formalidades esenciales ante el SII o ante los Tribunales Tributarios y Aduaneros (TTA).",
+      "details": "El Art. 63, inciso 2° CT establece que la citación debe constar por escrito y ser firmada por quien la formula. Si falta la firma, si no indica el lugar, fecha u hora de comparecencia, o si fue realizada verbalmente, existe un vicio formal que puede ser reclamado. El plazo para reclamar es de 30 días desde la notificación (Art. 122 CT). IMPORTANTE: El TTA ha fallado que la inobservancia de formalidades esenciales puede invalidar el acto administrativo si perjudica al contribuyente.",
+      "warnings": ["No ignore la citación solo porque tenga vicios. Presente la reclamación FORMALMENTE.", "El silencio o inacción puede ser considerado conformidad."],
+      "next_steps": ["Revisar detalladamente la citación: firma, fecha, hora, lugar, funcionario que la emite", "Presentar recurso de reposición (Art. 120 CT) o reclamación (Art. 122 CT) dentro de 30 días", "Solicitar asistencia de abogado tributario"],
+      "legal_refs": ["Art. 63, inc. 2° CT (requisitos formales)", "Art. 120 CT (recurso de reposición)", "Art. 122 CT (reclamación por inobservancia de formalidades)", "Art. 8 CT (principio de legalidad)"]
+    },
+    "plazo_comparecencia": {
+      "id": "plazo_comparecencia",
+      "type": "decision",
+      "question": "¿El plazo otorgado para comparecer es de al menos 5 días hábiles desde la notificación?",
+      "help": "El Art. 63 exige un plazo mínimo de 5 días hábiles. Si el SII otorga menos tiempo, es un vicio que puede reclamarse. Los días hábiles excluyen sábados, domingos y feriados legales.",
+      "legal_ref": "Art. 63, inciso 3°, Código Tributario (DL-830)",
+      "branches": [
+        {"condition": "plazo_ok", "next_node": "comparecencia_obligatoria"},
+        {"condition": "plazo_corto", "next_node": "result_plazo_corto"}
+      ]
+    },
+    "result_plazo_corto": {
+      "id": "result_plazo_corto",
+      "type": "result",
+      "summary": "La citación otorga un plazo inferior al mínimo legal de 5 días hábiles. El contribuyente puede reclamar la inobservancia de esta formalidad esencial.",
+      "details": "El Art. 63, inciso 3° CT establece expresamente que la citación debe indicar día y hora para comparecer, dando un plazo no inferior a 5 días hábiles. Si el SII cita para el día siguiente o dentro de 2-3 días, está violando la ley. El contribuyente puede: (a) no comparecer y reclamar, o (b) comparecer bajo protesta (hacer constar por escrito que lo hace sin reconocer la validez del plazo).",
+      "warnings": ["Comparecer bajo protesta es una estrategia defensiva válida: asiste al acto pero deja constancia del vicio."],
+      "next_steps": ["Calcular días hábiles exactos desde la notificación", "Decidir: NO comparecer + reclamación, o comparecer BAJO PROTESTA", "Documentar todo por escrito"],
+      "legal_refs": ["Art. 63, inc. 3° CT (plazo mínimo)", "Art. 122 CT (reclamación)", "Art. 8 CT (principio de legalidad)"]
+    },
+    "comparecencia_obligatoria": {
+      "id": "comparecencia_obligatoria",
+      "type": "info",
+      "summary": "La citación cumple todos los requisitos formales. El contribuyente está OBLIGADO a comparecer.",
+      "help": "Una citación válida genera el deber de comparecencia. No comparecer puede acarrear sanciones.",
+      "legal_ref": "Art. 63, inciso 1°, Código Tributario (DL-830)",
+      "next_node": "derechos_contribuyente"
+    },
+    "derechos_contribuyente": {
+      "id": "derechos_contribuyente",
+      "type": "decision",
+      "question": "¿El contribuyente desea conocer sus derechos durante la fiscalización?",
+      "help": "El contribuyente NO es un simple sujeto pasivo. Tiene derechos explícitos durante la fiscalización.",
+      "legal_ref": "Art. 63 CT, Art. 35 CT (secreto tributario), Art. 8 CT (principio de legalidad)",
+      "branches": [
+        {"condition": "conocer_derechos", "next_node": "result_derechos"},
+        {"condition": "no_conocer", "next_node": "result_obligaciones_basicas"}
+      ]
+    },
+    "result_derechos": {
+      "id": "result_derechos",
+      "type": "result",
+      "summary": "DERECHOS DEL CONTRIBUYENTE DURANTE LA FISCALIZACIÓN: (1) Ser asistido por abogado o contador, (2) No declarar contra sí mismo ni contra cónyuge/parientes, (3) Conocer el estado de la fiscalización, (4) Solicitar ampliación de plazos con causa justificada, (5) Reclamar formalidades, (6) Guardar reserva sobre antecedentes de terceros.",
+      "details": "El contribuyente citado tiene los siguientes derechos específicos: (a) DERECHO A ASISTENCIA: puede asistir acompañado de abogado o contador (Art. 63 CT, interpretación sistemática con Art. 8 CT). (b) DERECHO A NO AUTOINCRIMINARSE: no está obligado a declarar contra sí mismo ni contra su cónyuge, ascendientes, descendientes o hermanos (principio general del derecho, reforzado por Art. 35 CT sobre secreto). (c) DERECHO A INFORMACIÓN: puede conocer el estado de tramitación de la fiscalización. (d) DERECHO A PLAZOS RAZONABLES: puede solicitar prórroga si acredita causa justificada (enfermedad, viaje, etc.). (e) DERECHO A RECLAMAR: puede reclamar vicios formales dentro de 30 días. (f) DEBER DE SECRETO: el SII también tiene obligaciones de reserva; el contribuyente no debe revelar antecedentes de terceros.",
+      "warnings": ["El contribuyente DEBE comparecer, pero con sus derechos intactos.", "No firme actas o documentos sin leerlos completamente.", "Todo lo que diga en la fiscalización puede ser usado en su contra."],
+      "next_steps": ["Asistir con abogado tributario o contador especializado", "Preparar antecedentes solicitados con anticipación", "Solicitar copia del acta de comparecencia", "Si no entiende algo, pedir explicaciones por escrito"],
+      "legal_refs": ["Art. 63 CT (citación y comparecencia)", "Art. 35 CT (secreto y reserva)", "Art. 8 CT (principio de legalidad)", "Art. 60 CT (facultades de fiscalización)", "Art. 97 N° 6 CT (multa por no comparecer)"]
+    },
+    "result_obligaciones_basicas": {
+      "id": "result_obligaciones_basicas",
+      "type": "result",
+      "summary": "OBLIGACIONES DEL CONTRIBUYENTE: Debe comparecer personalmente o por representante en el día, hora y lugar indicados. Debe aportar los antecedentes, documentos o explicaciones requeridas. El incumplimiento puede acarrear multa de 5 a 20 UTAs (Art. 97 N° 6 CT).",
+      "details": "El contribuyente citado debe: (1) Comparecer en el lugar, fecha y hora indicados. (2) Presentar los antecedentes requeridos (libros, facturas, contratos, estados de cuenta, etc.). (3) Prestar las explicaciones que se le soliciten sobre sus actividades económicas. (4) No obstruir la labor fiscalizadora. Si no comparece sin causa justificada, el SII puede: (a) aplicar multa de 5 a 20 UTAs (Art. 97 N° 6 CT), (b) proceder a determinación de oficio (Art. 59 CT), (c) usar los antecedentes que tenga a su disposición para formarse convicción.",
+      "warnings": ["La determinación de oficio (Art. 59 CT) es gravosa: el SII fija la renta presumida sin necesidad de pruebas del contribuyente.", "La multa de 5-20 UTAs es significativa (1 UTA ≈ $65.000 CLP aprox, sujeto a reajuste anual)."],
+      "next_steps": ["Confirmar asistencia o solicitar prórroga con causa justificada ANTES de la fecha", "Preparar carpeta con documentación relevante", "Asistir con representante legal si es persona jurídica"],
+      "legal_refs": ["Art. 63 CT (comparecencia)", "Art. 97 N° 6 CT (multa por no comparecer)", "Art. 59 CT (determinación de oficio)"]
+    }
+  }
+}

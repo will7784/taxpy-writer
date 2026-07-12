@@ -1,0 +1,133 @@
+{
+  "tree_id": "recurso_reposicion",
+  "title": "Recurso de Reposición y Reclamación",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 120-122",
+  "description": "Procedimiento para impugnar actos del SII. Diferencia entre reposición (contra actos administrativos) y reclamación (contra liquidaciones). Plazos, requisitos y efectos.",
+  "tags": ["recurso", "reposicion", "reposición", "reclamacion", "reclamación", "impugnar", "recurso de reposición", "recurso de reclamación", "tta", "tribunal", "art 120", "art 121", "art 122"],
+  "root": {
+    "id": "root",
+    "type": "decision",
+    "question": "¿Qué acto del SII quiere impugnar el contribuyente?",
+    "help": "NO todos los actos del SII se impugnan igual. Es FUNDAMENTAL elegir la vía correcta.",
+    "legal_ref": "Art. 120-122, Código Tributario (DL-830)",
+    "branches": [
+      {"condition": "liquidacion_oficio", "next_node": "via_reclamacion"},
+      {"condition": "resolucion_sancionatoria", "next_node": "via_reclamacion"},
+      {"condition": "acto_administrativo_otro", "next_node": "via_reposicion"},
+      {"condition": "vicios_formales", "next_node": "via_forma"}
+    ]
+  },
+  "nodes": {
+    "via_reclamacion": {
+      "id": "via_reclamacion",
+      "type": "info",
+      "summary": "VÍA: RECLAMACIÓN (Art. 121 CT por fondo, Art. 122 CT por forma). Aplica para liquidaciones de oficio, resoluciones sancionatorias, y determinaciones.",
+      "help": "La reclamación es la vía para impugnar el FONDO (el monto) o la FORMA (vicios de procedimiento) de una liquidación.",
+      "legal_ref": "Art. 121-122 CT",
+      "next_node": "plazo_reclamacion"
+    },
+    "via_reposicion": {
+      "id": "via_reposicion",
+      "type": "info",
+      "summary": "VÍA: RECURSO DE REPOSICIÓN (Art. 120 CT). Aplica para actos administrativos que NO son liquidaciones: denegatoria de inicio de actividad, revocación de inscripción, etc.",
+      "help": "La reposición es más amplia: va contra cualquier acto administrativo del SII.",
+      "legal_ref": "Art. 120 CT",
+      "next_node": "plazo_reposicion"
+    },
+    "via_forma": {
+      "id": "via_forma",
+      "type": "info",
+      "summary": "VÍA: RECLAMACIÓN POR FORMA (Art. 122 CT). Aplica cuando el acto tiene vicios formales: mala notificación, falta de citación, plazos incumplidos, falta de firma.",
+      "help": "Esta vía ataca el PROCEDIMIENTO, no el fondo. Si tiene éxito, el acto se anula y el SII debe rehacerlo.",
+      "legal_ref": "Art. 122 CT",
+      "next_node": "plazo_forma"
+    },
+    "plazo_reclamacion": {
+      "id": "plazo_reclamacion",
+      "type": "decision",
+      "question": "¿Está dentro del plazo de 15 días hábiles desde la notificación de la liquidación?",
+      "help": "El plazo para reclamar por fondo es de 15 días hábiles. ES PERENTORIO. Si se pasa, la liquidación queda firme.",
+      "legal_ref": "Art. 121, inc. 1°, CT",
+      "branches": [
+        {"condition": "dentro_plazo", "next_node": "result_reclamar_fondo"},
+        {"condition": "plazo_vencido", "next_node": "result_plazo_vencido_recl"}
+      ]
+    },
+    "plazo_reposicion": {
+      "id": "plazo_reposicion",
+      "type": "decision",
+      "question": "¿Está dentro del plazo de 15 días hábiles desde la notificación del acto?",
+      "help": "Igual que la reclamación: 15 días hábiles.",
+      "legal_ref": "Art. 120 CT",
+      "branches": [
+        {"condition": "dentro_plazo", "next_node": "result_reposicion"},
+        {"condition": "plazo_vencido", "next_node": "result_plazo_vencido_rep"}
+      ]
+    },
+    "plazo_forma": {
+      "id": "plazo_forma",
+      "type": "decision",
+      "question": "¿Está dentro del plazo de 30 días desde que conoció el vicio formal?",
+      "help": "La reclamación por forma tiene plazo de 30 días (más largo que por fondo).",
+      "legal_ref": "Art. 122 CT",
+      "branches": [
+        {"condition": "dentro_plazo", "next_node": "result_reclamar_forma"},
+        {"condition": "plazo_vencido", "next_node": "result_plazo_vencido_forma"}
+      ]
+    },
+    "result_reclamar_fondo": {
+      "id": "result_reclamar_fondo",
+      "type": "result",
+      "summary": "RECLAMACIÓN POR FONDO (Art. 121 CT). Debe presentarse ANTE EL DIRECTOR REGIONAL del SII dentro de 15 días hábiles. Debe incluir: (a) Identificación del contribuyente, (b) Acto impugnado, (c) Fundamentos legales y antecedentes, (d) Pretensión concreta. EFECTO: SUSPENDE el pago hasta que el SII resuelva (60 días).",
+      "details": "REQUISITOS: (1) Escrito formal dirigido al Director Regional. (2) Individualizar el acto impugnado (fecha, folio, monto). (3) Exponer los fundamentos legales y factuales. (4) Acompañar antecedentes. (5) Indicar pretensión (bajar el monto, anular la liquidación). EFECTOS: (a) Suspensión del pago (Art. 121 inc. 3°). (b) El SII tiene 60 días para resolver. (c) Si no responde: rechazo tácito. (d) Contra el rechazo: reclamación ante los Tribunales Tributarios y Aduaneros (TTA) o segunda reclamación ante el Director Nacional.",
+      "warnings": ["La suspensión del pago NO es automática: debe solicitarse EXPRESAMENTE.", "Si no presenta antecedentes sólidos, el SII rechazará."],
+      "next_steps": ["Redactar reclamación con argumentos legales y antecedentes", "Presentar en el SII dentro de 15 días hábiles", "Solicitar suspensión expresa del pago", "Preparar para segunda instancia (TTA)"],
+      "legal_refs": ["Art. 121 CT (reclamación por fondo)", "Art. 123 CT (recurso ante Director Nacional)", "Art. 65 CT (suspensión del pago)"]
+    },
+    "result_reposicion": {
+      "id": "result_reposicion",
+      "type": "result",
+      "summary": "RECURSO DE REPOSICIÓN (Art. 120 CT). Se presenta ante la misma autoridad que emitió el acto. Plazo: 15 días hábiles. El SII tiene 30 días para resolver. Si no responde: rechazo tácito.",
+      "details": "Aplica para: denegatoria de inicio de actividad, revocación de inscripción, rechazo de solicitudes, etc. NO aplica para liquidaciones (van por Art. 121). El recurso debe fundamentarse en: (a) Inobservancia de ley, (b) Error de hecho, (c) Vicios de procedimiento. Contra el rechazo: reclamación ante el Director Nacional (Art. 123 CT).",
+      "warnings": ["La reposición NO suspende el acto impugnado (a diferencia de la reclamación por fondo)."],
+      "next_steps": ["Redactar recurso de reposición", "Presentar en el SII", "Preparar segunda instancia si es rechazado"],
+      "legal_refs": ["Art. 120 CT (reposición)", "Art. 123 CT (Director Nacional)"]
+    },
+    "result_reclamar_forma": {
+      "id": "result_reclamar_forma",
+      "type": "result",
+      "summary": "RECLAMACIÓN POR FORMA (Art. 122 CT). Ataque a vicios del procedimiento. Plazo: 30 días desde el conocimiento del vicio. NO suspende el pago. Si prospera: el acto se anula y el SII debe rehacerlo.",
+      "details": "VICIOS RECLAMABLES: (1) Mala notificación (Art. 124 CT), (2) Falta de citación previa (Art. 63 CT), (3) Plazos no cumplidos, (4) Falta de firma del funcionario, (5) Falta de motivación. IMPORTANTE: Si prospera, el SII debe REPETIR todo el procedimiento desde el vicio. Esto gana TIEMPO.",
+      "warnings": ["La reclamación por forma NO suspende el pago. Debe pagar o solicitar suspensión por separado.", "Si el SII rehace el procedimiento correctamente, puede llegar al mismo resultado."],
+      "next_steps": ["Documentar el vicio formal con fechas y antecedentes", "Presentar reclamación por forma en 30 días", "Prepararse para que el SII rehaga el procedimiento"],
+      "legal_refs": ["Art. 122 CT (reclamación por forma)", "Art. 124 CT (notificaciones)", "Art. 63 CT (citación)"]
+    },
+    "result_plazo_vencido_recl": {
+      "id": "result_plazo_vencido_recl",
+      "type": "result",
+      "summary": "PLAZO VENCIDO PARA RECLAMAR POR FONDO. La liquidación está FIRME. Opciones: (1) Convenio de pago (Art. 56 CT), (2) Facilidades PRO-PYME (Art. 192 CT), (3) Reclamar por forma si hay vicios (30 días), (4) Pago bajo protesta.",
+      "details": "Una vez vencido el plazo de 15 días, el contribuyente pierde el derecho a reclamar el fondo. Sin embargo: (a) Puede reclamar por forma si hay vicios (30 días desde conocimiento). (b) Puede pagar bajo protesta y reclamar el fondo dentro de 3 años (prescripción). (c) Puede solicitar convenio de pago.",
+      "warnings": ["El pago bajo protesta debe hacerse EXPLÍCITO."],
+      "next_steps": ["Evaluar vicios formales para reclamación por forma", "Pagar bajo protesta si aplica", "Solicitar convenio de pago"],
+      "legal_refs": ["Art. 121 CT", "Art. 122 CT", "Art. 56 CT", "Art. 192 CT"]
+    },
+    "result_plazo_vencido_rep": {
+      "id": "result_plazo_vencido_rep",
+      "type": "result",
+      "summary": "PLAZO VENCIDO PARA REPOSICIÓN. El acto está firme. Opciones: reclamación ante Director Nacional (Art. 123 CT) si aún está a tiempo, o acción judicial contencioso-administrativa.",
+      "details": "Si venció el plazo de reposición, puede intentar: (1) Reclamación ante Director Nacional (Art. 123 CT) — plazo discutible, (2) Acción contencioso-administrativa en Tribunales ordinarios — plazo de 6 meses desde la notificación.",
+      "warnings": ["La acción judicial es más cara y lenta que la vía administrativa."],
+      "next_steps": ["Evaluar reclamación ante Director Nacional", "Evaluar acción judicial"],
+      "legal_refs": ["Art. 120 CT", "Art. 123 CT"]
+    },
+    "result_plazo_vencido_forma": {
+      "id": "result_plazo_vencido_forma",
+      "type": "result",
+      "summary": "PLAZO VENCIDO PARA RECLAMAR POR FORMA. Opciones: pago bajo protesta + reclamar el fondo dentro de 3 años, o convenio de pago.",
+      "details": "Si también venció el plazo de 30 días para forma, las opciones se reducen. Pero el pago bajo protesta mantiene vivo el derecho a reclamar el fondo dentro del plazo de prescripción.",
+      "next_steps": ["Pagar bajo protesta", "Reclamar por fondo dentro de 3 años"],
+      "legal_refs": ["Art. 122 CT", "Art. 200 CT (prescripción)"]
+    }
+  }
+}

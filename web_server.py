@@ -10,6 +10,7 @@ Incluye:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -25,6 +26,13 @@ from starlette.middleware.sessions import SessionMiddleware
 import config
 from decision_tree_drafter import DRAFTS_DIR, to_mermaid
 from settings_store import store as settings_store
+from supabase_client import supabase
+
+# Supabase free tier pausa el proyecto tras ~7 dias sin actividad -- eso
+# dejo al RAG respondiendo "no encontro informacion" en produccion sin
+# ningun aviso. Este ping evita llegar a ese limite mientras el bot este
+# corriendo (Railway lo mantiene arriba 24/7). Bastante margen bajo 7 dias.
+SUPABASE_KEEPALIVE_INTERVAL_SECONDS = 24 * 60 * 60  # 24 horas
 
 TREES_DIR = config.BASE_DIR / "decision_trees" / "codigo_tributario"
 
@@ -83,10 +91,25 @@ async def _list_notebooks_from_api() -> list[dict]:
 
 # ── FastAPI App ───────────────────────────────────────────
 
+async def _supabase_keepalive_loop() -> None:
+    """Pinguea Supabase periodicamente para que el plan free no lo pause por inactividad."""
+    while True:
+        try:
+            await asyncio.to_thread(
+                lambda: supabase.table("document_chunks").select("chunk_uid").limit(1).execute()
+            )
+            logger.info("Supabase keepalive: OK")
+        except Exception as e:
+            logger.warning("Supabase keepalive fallo (se reintenta en el proximo ciclo): %s", e)
+        await asyncio.sleep(SUPABASE_KEEPALIVE_INTERVAL_SECONDS)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Impuestia Admin starting up...")
+    keepalive_task = asyncio.create_task(_supabase_keepalive_loop())
     yield
+    keepalive_task.cancel()
     logger.info("Impuestia Admin shutting down...")
 
 

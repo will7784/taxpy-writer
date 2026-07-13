@@ -1,8 +1,9 @@
 # Telegram
 python-telegram-bot>=21.0
 
-# LLM (escritura con GPT-4o + embeddings)
+# LLM (escritura con GPT-4o + embeddings, o Gemini si GEMINI_API_KEY esta seteada)
 openai>=1.55.0
+google-genai>=2.0.0
 
 # Supabase (RAG vector database)
 supabase>=2.0.0

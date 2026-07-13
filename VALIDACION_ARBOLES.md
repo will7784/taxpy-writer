@@ -376,6 +376,11 @@ Cada nodo tiene `legal_ref` o `legal_refs`. Verifica que:
 - El artículo citado existe en el DL-830
 - El inciso o numeral es correcto
 - La interpretación es la vigente (no derogada)
+- **¿Este tema tiene un componente de vigencia/fecha que falta representar?**
+  La tributación cambia con el tiempo (ej. venta de inmuebles: el régimen depende
+  de la fecha de adquisición). Si el artículo menciona reformas, normas
+  transitorias o "a partir del"/"con anterioridad a", el árbol debería preguntar
+  la fecha relevante en vez de asumir un solo régimen vigente.
 
 ### 2. Verificar condiciones (facts)
 Las `branches` usan `condition` como identificador booleano. Ejemplos:

@@ -41,7 +41,17 @@ _SYSTEM_PROMPT = (
     "- Cada nodo lleva su legal_ref exacto. NO inventes artículos, incisos ni "
     "numerales que no estén en el texto proporcionado.\n"
     "- Todo nodo 'decision' que no sea el root debe existir dentro de la lista "
-    "`nodes`, con su `id` único y consistente con los `next_node` que apuntan a él."
+    "`nodes`, con su `id` único y consistente con los `next_node` que apuntan a él.\n\n"
+    "ATENCIÓN A LA VIGENCIA: la tributación chilena cambia con el tiempo -- un "
+    "mismo hecho (ej. la venta de un inmueble) puede tributar distinto según la "
+    "fecha en que ocurrió (adquisición, reforma, entrada en vigencia de una ley). "
+    "Si el texto del artículo menciona fechas, años, 'a partir del', 'con "
+    "anterioridad a', 'hasta el', normas transitorias, o distintos regímenes "
+    "según cuándo ocurrió el hecho, NO asumas un solo régimen vigente: agrega un "
+    "nodo 'decision' que pregunte explícitamente por la fecha relevante (ej. "
+    "'¿La propiedad fue adquirida antes del [fecha de corte]?') y ramifica según "
+    "corresponda a cada período. Si el artículo no tiene ese componente temporal, "
+    "no lo inventes."
 )
 
 

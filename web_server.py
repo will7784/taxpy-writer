@@ -1,5 +1,5 @@
 """
-Servidor web FastAPI para panel de administración de Taxpy Writer.
+Servidor web FastAPI para panel de administración de Impuestia.
 
 Incluye:
 - Login simple con sesiones
@@ -85,12 +85,12 @@ async def _list_notebooks_from_api() -> list[dict]:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Taxpy Writer Admin starting up...")
+    logger.info("Impuestia Admin starting up...")
     yield
-    logger.info("Taxpy Writer Admin shutting down...")
+    logger.info("Impuestia Admin shutting down...")
 
 
-app = FastAPI(title="Taxpy Writer Admin", lifespan=lifespan)
+app = FastAPI(title="Impuestia Admin", lifespan=lifespan)
 
 
 @app.exception_handler(Exception)
@@ -149,7 +149,7 @@ async def logout(request: Request):
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "taxpy-writer"}
+    return {"status": "ok", "service": "impuestia"}
 
 
 # ── Rutas protegidas ──────────────────────────────────────

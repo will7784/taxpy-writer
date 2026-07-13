@@ -86,4 +86,4 @@ API_SERVER_PORT = int(os.getenv("PORT", os.getenv("API_SERVER_PORT", "8000")))
 # ============================================
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "will")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "anwi7784")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "taxpy-writer-secret-change-me")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "impuestia-secret-change-me")

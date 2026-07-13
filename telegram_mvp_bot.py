@@ -338,6 +338,14 @@ class WriterTelegramBot:
             )
             return
 
+        # Mismo guardrail anti-alucinación que usa _process_chat -- este modo ya
+        # no se auto-dispara desde texto libre, pero si se reactiva explícitamente
+        # más adelante no debe repetir el incidente de citas inventadas.
+        try:
+            content = guardrail_check(research, content)
+        except Exception as e:
+            console.print(f"[yellow]⚠️ Guardrail: {e}[/yellow]")
+
         # Guardar sesión
         self._sessions[chat_id] = {
             "title": topic,
@@ -415,13 +423,12 @@ class WriterTelegramBot:
             await self._continue_decision_tree(update, text, session)
             return
 
-        # Mensaje libre normal
-        detected = self.writer.detect_content_type(text)
-        if detected in ("manual", "articulo", "guion", "historia"):
-            await self._process_request(update, text, detected)
-        else:
-            # Por defecto: modo chat conversacional usando NotebookLM directo
-            await self._process_chat(update, text)
+        # Mensaje libre normal: consultor por defecto (árbol de decisión -> RAG ->
+        # búsqueda en vivo). El modo escritor (manual/articulo/guion/historia) ya
+        # no se auto-dispara desde texto libre -- /manual, /articulo, etc. avisan
+        # que está descontinuado (ver _manual arriba); writer.write() sigue
+        # disponible para reactivarlo explícitamente más adelante.
+        await self._process_chat(update, text)
 
     @staticmethod
     def _clean_notebooklm_refs(text: str) -> str:

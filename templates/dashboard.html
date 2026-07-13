@@ -35,82 +35,17 @@
                     </span>
                 </div>
                 <div class="status-item">
-                    <span class="status-label">NotebookLM:</span>
-                    <span class="status-badge status-{{ 'online' if notebooklm_ok else 'offline' }}">
-                        {{ 'Conectado' if notebooklm_ok else 'Error' }}
-                    </span>
+                    <span class="status-label">Consultor (árbol → RAG → búsqueda en vivo):</span>
+                    <span class="status-badge status-online">Activo</span>
                 </div>
-                <div class="status-item">
-                    <span class="status-label">Cuaderno primario:</span>
-                    <span class="status-value">{{ primary_name or 'No configurado' }}</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Cuaderno secundario:</span>
-                    <span class="status-value">{{ secondary_name or 'No configurado' }}</span>
-                </div>
-                {% if notebooklm_error %}
-                <div class="alert alert-error" style="margin-top:1rem;font-size:0.85rem;">
-                    <strong>Error NotebookLM:</strong><br>
-                    <code>{{ notebooklm_error }}</code>
-                </div>
-                {% endif %}
             </div>
 
-            <!-- Subir credenciales -->
+            <!-- Árboles de decisión -->
             <div class="card">
-                <h2>🔑 Actualizar Credenciales</h2>
-                <p class="hint">Sube un nuevo <code>storage_state.json</code> para refrescar la sesión de NotebookLM.</p>
-                <form method="post" action="/api/auth/upload" enctype="multipart/form-data">
-                    <div class="form-group">
-                        <input type="file" name="auth_file" accept=".json" required>
-                    </div>
-                    <button type="submit" class="btn btn-primary">Subir</button>
-                </form>
+                <h2>🌳 Árboles de Decisión</h2>
+                <p class="hint">Revisa y aprueba los borradores generados por el asistente de árboles.</p>
+                <a href="/review/drafts" class="btn btn-primary">Ver borradores</a>
             </div>
-        </div>
-
-        <!-- Cuadernos disponibles -->
-        <div class="card full-width">
-            <h2>📓 Cuadernos Disponibles</h2>
-            {% if notebooks %}
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Nombre</th>
-                        <th>ID</th>
-                        <th>Fuentes</th>
-                        <th>Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for nb in notebooks %}
-                    <tr class="{% if nb.id == primary_id %}row-primary{% endif %} {% if nb.id == secondary_id %}row-secondary{% endif %} {% if nb.source_count == 0 %}row-empty{% endif %}">
-                        <td>
-                            {{ nb.name }}
-                            {% if nb.id == primary_id %}<span class="tag tag-primary">Primario</span>{% endif %}
-                            {% if nb.id == secondary_id %}<span class="tag tag-secondary">Secundario</span>{% endif %}
-                        </td>
-                        <td><code>{{ nb.id[:20] }}...</code></td>
-                        <td>{{ nb.source_count }}</td>
-                        <td>
-                            <form method="post" action="/api/notebook/select" class="inline-form">
-                                <input type="hidden" name="notebook_id" value="{{ nb.id }}">
-                                <input type="hidden" name="notebook_name" value="{{ nb.name }}">
-                                <button type="submit" name="role" value="primary" class="btn btn-sm {% if nb.id == primary_id %}btn-active{% else %}btn-outline{% endif %}">
-                                    Primario
-                                </button>
-                                <button type="submit" name="role" value="secondary" class="btn btn-sm {% if nb.id == secondary_id %}btn-active{% else %}btn-outline{% endif %}">
-                                    Secundario
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-            {% else %}
-            <p class="empty">No se pudieron cargar los cuadernos. Verifica que las credenciales sean válidas.</p>
-            {% endif %}
         </div>
     </div>
 </body>

@@ -159,34 +159,14 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
     if not _is_authenticated(request):
         return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
-    # Estado
-    primary_name = settings_store.get("primary_notebook_name", config.NOTEBOOKLM_NOTEBOOK_NAME)
-    secondary_name = settings_store.get("secondary_notebook_name", "")
-    primary_id = settings_store.get("primary_notebook_id", "")
-    secondary_id = settings_store.get("secondary_notebook_id", "")
-
-    # Intentar listar notebooks
-    notebooks = await _list_notebooks_from_api()
-    # Ordenar por fuentes descendente (los más útiles primero)
-    notebooks.sort(key=lambda nb: nb.get("source_count", 0), reverse=True)
-
-    # Verificar conexión NotebookLM
-    notebooklm_ok = bool(notebooks)
-    notebooklm_error = settings_store.get("notebooklm_last_error", "")
-
-    # Bot siempre "online" mientras este servidor corre (son el mismo proceso)
+    # Bot siempre "online" mientras este servidor corre (son el mismo proceso).
+    # NotebookLM ya no se consulta acá -- es funcionalidad deprecada
+    # (config.py: "se eliminará"), el consultor usa RAG/Supabase directo.
     bot_online = True
 
     return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "bot_online": bot_online,
-        "notebooklm_ok": notebooklm_ok,
-        "notebooklm_error": notebooklm_error,
-        "primary_name": primary_name,
-        "secondary_name": secondary_name,
-        "primary_id": primary_id,
-        "secondary_id": secondary_id,
-        "notebooks": notebooks,
         "message": message,
         "error": error,
     })

@@ -52,6 +52,23 @@ def _log_query(chat_id: int, text: str) -> None:
     except Exception:
         pass
 
+
+async def _safe_edit(msg, text: str) -> None:
+    """edit_text que nunca revienta el flujo -- Telegram puede devolver
+    'Message to edit not found' (el mensaje de estado ya no existe) sin
+    que eso deba impedir que la respuesta final igual se envíe."""
+    try:
+        await msg.edit_text(text)
+    except Exception as e:
+        console.print(f"[dim]Status edit omitido: {e}[/dim]")
+
+
+async def _safe_delete(msg) -> None:
+    try:
+        await msg.delete()
+    except Exception as e:
+        console.print(f"[dim]Status delete omitido: {e}[/dim]")
+
 console = Console()
 
 
@@ -262,10 +279,10 @@ class WriterTelegramBot:
             outline = await self.writer.generate_outline(topic, research, detected)
         except Exception as e:
             console.print(f"[red]Outline error: {e}[/red]")
-            await status_msg.edit_text("❌ Error generando el índice.")
+            await _safe_edit(status_msg, "❌ Error generando el índice.")
             return
 
-        await status_msg.delete()
+        await _safe_delete(status_msg)
 
         # Guardar sesión para escritura posterior
         self._sessions[chat_id] = {
@@ -333,7 +350,7 @@ class WriterTelegramBot:
             content = await self.writer.write(topic, research, detected, outline)
         except Exception as e:
             console.print(f"[red]Write error: {e}[/red]")
-            await status_msg.edit_text(
+            await _safe_edit(status_msg, 
                 "❌ Ocurrió un error escribiendo el contenido. Intenta de nuevo."
             )
             return
@@ -357,7 +374,7 @@ class WriterTelegramBot:
             "outline_pending": False,
         }
 
-        await status_msg.delete()
+        await _safe_delete(status_msg)
 
         # 3. Enviar texto partido
         chunks = self.writer.split_for_telegram(content)
@@ -468,7 +485,7 @@ class WriterTelegramBot:
                     branch = current_node.branches[idx]
                     facts[branch["condition"]] = True
                 else:
-                    await status_msg.delete()
+                    await _safe_delete(status_msg)
                     await update.message.reply_text(
                         f"⚠️ Opción no válida. Elige un número entre 1 y {len(current_node.branches)}."
                     )
@@ -486,7 +503,7 @@ class WriterTelegramBot:
         
         if result.type == "result":
             content = decision_engine.render_result(tree, result, path, include_diagram=True)
-            await status_msg.delete()
+            await _safe_delete(status_msg)
             await update.message.reply_text(content)
             self._sessions[chat_id] = {
                 "title": session["title"],
@@ -503,7 +520,7 @@ class WriterTelegramBot:
             current_node = tree.nodes.get(current_node_id)
             if current_node and current_node.branches:
                 interactive = decision_engine.render_interactive(current_node)
-                await status_msg.delete()
+                await _safe_delete(status_msg)
                 await update.message.reply_text(
                     f"🌳 *{tree.title}*\n\n"
                     f"Necesito más información para continuar:\n\n"
@@ -520,7 +537,7 @@ class WriterTelegramBot:
         last_node = path[-1] if path else None
         if last_node and last_node.type == "decision" and last_node.branches:
             interactive = decision_engine.render_interactive(last_node)
-            await status_msg.delete()
+            await _safe_delete(status_msg)
             await update.message.reply_text(
                 f"🌳 *{tree.title}*\n\n"
                 f"Siguiente pregunta:\n\n"
@@ -536,7 +553,7 @@ class WriterTelegramBot:
             return
         
         # Fallback
-        await status_msg.edit_text("🌳 Árbol incompleto. Buscando en fuentes...")
+        await _safe_edit(status_msg, "🌳 Árbol incompleto. Buscando en fuentes...")
         await self._process_chat(update, text)
 
     async def _process_chat(
@@ -565,14 +582,14 @@ class WriterTelegramBot:
             )
 
             if tree:
-                await status_msg.edit_text(f"🌳 Árbol encontrado: *{tree.title}*\nNavegando con LLM...")
+                await _safe_edit(status_msg, f"🌳 Árbol encontrado: *{tree.title}*\nNavegando con LLM...")
 
                 # Si llegamos a un nodo resultado → renderizar
                 if result_node and result_node.type == "result":
                     content = decision_engine.render_result(
                         tree, result_node, path, include_diagram=True
                     )
-                    await status_msg.delete()
+                    await _safe_delete(status_msg)
                     await update.message.reply_text(content)
                     source = "decision_tree"
 
@@ -592,7 +609,7 @@ class WriterTelegramBot:
                 if path:
                     last_node = path[-1]
                     if last_node.type == "decision" and last_node.branches:
-                        await status_msg.delete()
+                        await _safe_delete(status_msg)
                         interactive = decision_engine.render_interactive(last_node)
                         await update.message.reply_text(
                             f"🌳 *{tree.title}*\n\n"
@@ -614,10 +631,10 @@ class WriterTelegramBot:
                         return
 
                 # Si no hay branches → algo extraño, fallback a RAG
-                await status_msg.edit_text("🌳 Árbol incompleto. Buscando en fuentes...")
+                await _safe_edit(status_msg, "🌳 Árbol incompleto. Buscando en fuentes...")
 
             else:
-                await status_msg.edit_text("🔍 No hay árbol para este tema. Buscando en fuentes legales...")
+                await _safe_edit(status_msg, "🔍 No hay árbol para este tema. Buscando en fuentes legales...")
 
             # ── PASO 2: Fallback a RAG ─────────────────────────────────────
             search_results = await rag_engine.search_for_conversation(text)
@@ -628,14 +645,14 @@ class WriterTelegramBot:
             low_confidence = not search_results or search_results[0].similarity < config.RAG_CONFIDENCE_THRESHOLD
             live_results: list[dict] = []
             if low_confidence:
-                await status_msg.edit_text("🌐 Verificando en fuentes oficiales en línea...")
+                await _safe_edit(status_msg, "🌐 Verificando en fuentes oficiales en línea...")
                 try:
                     live_results = await live_lookup.search_live(text)
                 except Exception as e:
                     console.print(f"[yellow]⚠️ live_lookup falló: {e}[/yellow]")
 
             if not search_results and not live_results:
-                await status_msg.delete()
+                await _safe_delete(status_msg)
                 content = (
                     "💬 No encontré información sobre eso en mi base de conocimiento tributario.\n\n"
                     "Actualmente tengo árboles de decisión para estos temas del Código Tributario:\n"
@@ -655,7 +672,7 @@ class WriterTelegramBot:
             else:
                 context = await rag_engine.build_context(search_results, query=text) if search_results else ""
                 live_context = live_lookup.format_for_context(live_results)
-                await status_msg.edit_text("💬 Analizando fuentes legales...")
+                await _safe_edit(status_msg, "💬 Analizando fuentes legales...")
 
                 agent_md = _load_agent_md()
 
@@ -698,7 +715,7 @@ class WriterTelegramBot:
 
                 source = "rag" if search_results else "live_lookup"
 
-            await status_msg.delete()
+            await _safe_delete(status_msg)
 
             # Guardar sesión
             self._sessions[chat_id] = {
@@ -740,7 +757,7 @@ class WriterTelegramBot:
             console.print(f"[red]Chat error: {e}[/red]")
             import traceback
             console.print(traceback.format_exc())
-            await status_msg.edit_text("❌ Error procesando la consulta. Intenta de nuevo.")
+            await _safe_edit(status_msg, "❌ Error procesando la consulta. Intenta de nuevo.")
             return
 
         # Voz

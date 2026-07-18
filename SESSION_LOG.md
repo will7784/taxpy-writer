@@ -248,3 +248,235 @@ nuevo. La UI de revisión y el parser sí se probaron end-to-end con datos reale
 - `web_server.py` — rutas `/review/drafts/*` + fix `Path` no importado (modificado)
 - `templates/review_drafts.html`, `templates/review_detail.html` — UI de revisión (nuevos)
 - `requirements.txt` — se agregó `pydantic` (modificado)
+
+---
+
+# Sesión 2026-07-12 — Incidente en producción: consultor por defecto + deploy roto + Supabase pausado
+
+## Contexto
+
+El usuario probó el bot real en Telegram con una pregunta sobre venta de inmuebles
+y la respuesta fue mala (artículo largo tipo blog, con markdown, que inventó una
+"exención por vivienda habitual" que no existe en la LIR). A partir de ahí se
+diagnosticó y arregló una cadena de problemas reales, todos independientes entre
+sí, que se fueron descubriendo uno detrás de otro. Nada de esto estaba pusheado
+al arrancar el día — `origin/main` seguía en el commit de antes de la sesión de
+ayer (`8e42af6`).
+
+También hubo un pivote de producto explícito del usuario: esto deja de ser un
+generador de contenido para blog/LinkedIn — es un consultor tributario
+conversacional para vender por suscripción a contadores. El modo escritor
+(`writer.write()`) no se borra, se pospone.
+
+## Cadena de problemas encontrados y arreglados (en orden)
+
+1. **Bug de ruteo (causa directa de la respuesta mala).** En
+   `telegram_mvp_bot.py:_handle_text`, todo mensaje libre pasaba por
+   `writer.detect_content_type(text)`, cuyo default es `"articulo"` — eso
+   disparaba el modo escritor (sin `citation_guardrail.guardrail_check()`, sin
+   límite de tokens, y con fallback explícito a "escribir con conocimiento
+   general" si el RAG fallaba). Los comandos `/manual`, `/articulo`, etc. ya
+   estaban apagados, pero el auto-ruteo desde texto libre nunca se desconectó.
+   **Fix**: todo mensaje libre va directo a `_process_chat` (árbol → RAG → live
+   lookup). `writer.write()` queda intacto para reactivar el modo escritor más
+   adelante. Se agregó `guardrail_check()` también en `_process_request` como
+   defensa en profundidad.
+2. **Árboles de decisión con vigencia/fecha.** El usuario señaló que la
+   tributación de venta de inmuebles depende de LA FECHA de adquisición
+   (regímenes distintos en distintos años) — se reforzó el prompt de
+   `decision_tree_drafter.py` para que genere ramas de fecha cuando el artículo
+   mencione reformas/normas transitorias, y se agregó una nota en
+   `VALIDACION_ARBOLES.md`.
+3. **Rebrand a Impuestia** en el panel admin (`web_server.py`, templates de
+   login/dashboard/revisión). "ClaudIA" se mantiene como nombre de la asistente
+   dentro del chat (decisión explícita del usuario).
+4. **Deploy roto en Railway desde hacía ~un mes.** Revisando los logs reales del
+   deploy fallido: `ModuleNotFoundError: No module named 'google'`.
+   `llm_client.py` importa el SDK de Gemini sin condición, pero `google-genai`
+   nunca se agregó a `requirements.txt`. Railway hacía rollback silencioso al
+   último deploy bueno (anterior al soporte dual OpenAI/Gemini) en CADA commit
+   desde entonces — nadie lo había notado. **Fix**: se agregó
+   `google-genai>=2.0.0` a `requirements.txt`.
+5. **Dashboard seguía mostrando el error de NotebookLM** después del rebrand,
+   lo que le hizo pensar al usuario que nada se había arreglado. NotebookLM ya
+   está deprecado (decisión de hoy), así que se sacó del dashboard entero: ya no
+   se llama a `_list_notebooks_from_api()` en `/dashboard`, se sacaron las
+   tarjetas de credenciales/cuadernos del template.
+6. **`telegram.error.BadRequest: Message to edit not found`** en los logs —
+   Telegram a veces no encuentra el mensaje de estado que el bot intenta
+   editar/borrar. Se agregaron `_safe_edit()`/`_safe_delete()` (helpers a nivel
+   de módulo) que envuelven cada uso de `status_msg.edit_text()`/`.delete()` en
+   su propio try/except, aplicado en todo el archivo, no solo en `_process_chat`.
+7. **La causa raíz real de ambas respuestas malas (ayer y hoy): el proyecto de
+   Supabase estaba PAUSADO** (plan free, se pausa solo tras ~7 días sin
+   actividad). El contenido SÍ estaba bien chunkeado (Art. 17 N°8 con varios
+   sub-chunks, verificado con SQL directo) — el RAG fallaba porque no podía
+   conectarse, no porque le faltara información. El usuario eligió NO pagar
+   Supabase Pro por ahora; en su lugar se agregó un **keepalive**: un ping cada
+   24h a `document_chunks` corriendo como background task en el `lifespan` de
+   FastAPI (`web_server.py`), ya que el proceso de Railway corre 24/7.
+
+`telegram.error.Conflict: terminated by other getUpdates request` apareció varias
+veces en los logs durante estos redeploys — parece ser el solape transitorio
+normal entre el contenedor viejo terminando y el nuevo arrancando en cada deploy,
+no un problema de réplicas (confirmado: 1 réplica, sin proyectos duplicados en
+Railway). Se resuelve solo segundos después de cada deploy; no bloqueó las
+respuestas reales una vez estable.
+
+## Verificación real (en producción, con el usuario)
+
+Después de todos los fixes + Supabase despierto, se probaron dos preguntas
+reales en Telegram y el bot respondió correctamente citando Art. 17 N° 8 (LIR,
+DL-824): la exención de 8.000 UF, la opción de impuesto único del 10%, y el
+plazo de 1 año (4 años si es por subdivisión/construcción) entre adquisición y
+venta. Sin alucinaciones, sin modo escritor, tono conversacional correcto.
+
+**Bug menor encontrado en la verificación** (no bloqueante, queda pendiente):
+`citation_guardrail.py` agrega `[WARN] No pude confirmar en las fuentes
+consultadas: 'DL-824'` en CADA respuesta que menciona "DL-824" — es un falso
+positivo: el patrón `DL[-\s]?(824|825|830)` en `_ARTICLE_PATTERNS` intenta
+verificar "824" como si fuera un número de artículo contra `_context_articles`,
+pero 824 es el número del decreto, no de un artículo, así que nunca va a
+coincidir. La cita en sí es correcta, el warning es ruido.
+
+## Pendientes para mañana
+
+1. **Arrancar los árboles de decisión de verdad** — el usuario quiere empezar
+   por venta de inmuebles (Art. 17 N° 8) dado el tema de vigencia que señaló:
+   según él, hasta cierto año no se pagaba nada y después se aplicó el tope de
+   8.000 UF — hay que confirmar el año exacto del cambio de régimen y modelarlo
+   como rama de fecha en el árbol (ver punto 2 de la sesión de hoy).
+   `python scripts/draft_tree_cli.py --chunk-uid ley_lir_art_17_n8` (o el
+   chunk_uid exacto que corresponda) y revisar en `/review/drafts`.
+2. **Falso positivo de `DL-824` en el guardrail** — ajustar
+   `citation_guardrail.py` para que el patrón `DL[-\s]?(824|825|830)` no
+   intente validarse contra `_context_articles` (ya está cubierto por los
+   patrones "Art. X del DL-824" que sí funcionan bien).
+3. Pendientes que quedaron de ayer sin resolver: `TAVILY_API_KEY` (Capa 3
+   sigue inactiva), correr `scripts/eval_graph_lift.py` cuando haya más
+   queries reales acumuladas en `usage_logs`.
+4. El frontend para subir documentos y el frontend de "probar respuestas antes
+   de que las vea un usuario real" (acordado ayer, pospuesto) — el dashboard ya
+   está limpio y listo para que esto se agregue encima.
+
+## Palabras clave para recordar mañana
+
+> "**árboles**" (sin más contexto) → hoy toca modelar árboles de decisión de
+> verdad, empezando por venta de inmuebles/Art. 17 N° 8 con su componente de
+> vigencia por fecha. Usar `scripts/draft_tree_cli.py` + revisar en
+> `/review/drafts`.
+
+## Archivos nuevos/modificados clave (sesión de hoy)
+
+- `telegram_mvp_bot.py` — fix de ruteo (consultor por defecto), guardrail en
+  modo escritor, `_safe_edit`/`_safe_delete` en todo el archivo (modificado)
+- `decision_tree_drafter.py`, `VALIDACION_ARBOLES.md` — prompt/guía reforzados
+  para vigencia/fecha (modificado)
+- `web_server.py`, `templates/dashboard.html`, `templates/login.html`,
+  `templates/review_*.html`, `config.py` — rebrand a Impuestia (modificado)
+- `requirements.txt` — se agregó `google-genai>=2.0.0` (el fix real del deploy
+  roto de todo un mes) (modificado)
+- `web_server.py` — dashboard sin NotebookLM + keepalive de Supabase cada 24h
+  en el `lifespan` de FastAPI (modificado)
+
+---
+
+# Sesión 2026-07-13 — Primeros árboles de decisión reales (LIR + Código Tributario)
+
+## Contexto
+
+Con el bot ya funcionando bien en producción (confirmado con dos preguntas reales
+en Telegram sobre venta de inmuebles, citando Art. 17 N° 8 correctamente), el
+usuario dio la instrucción de fondo para esta fase: **el Código Tributario es lo
+que más le cuesta a los contadores** — la prioridad es construir árboles de
+decisión para sus temas más relevantes (mencionó: citaciones, facultad de
+tasación, términos de giro, multas). Se le hizo notar que citaciones (árbol 1,
+Art. 63) y multas (árbol 5, Art. 97-98) ya estaban cubiertos — no se duplicaron.
+
+Limitación técnica de toda la sesión: este sandbox no tiene acceso real a
+internet (mismo bloqueo SSL de siempre), así que `scripts/draft_tree_cli.py`
+(que llama al LLM) no se pudo ejecutar. En su lugar, cada árbol se armó **a
+mano**, construyendo directamente los objetos `DraftTree`/`DraftNode` de
+`schemas.py` en un script Python — pero el contenido de cada uno se extrajo y
+verificó contra el **texto real de las leyes** (los PDFs locales de DL-824 y
+DL-830, usando `legal_parser.py`), nunca inventado de memoria.
+
+## Árboles nuevos (6 total, todos en `decision_trees/_drafts/`, todos validados)
+
+Cada uno se cargó con el parser real de `decision_engine.py` (mismo que usa el
+botón "Aprobar") y se probó CADA camino posible de principio a fin antes de
+darlo por terminado.
+
+### LIR (Ley de Impuesto a la Renta, DL-824)
+1. **`venta_inmuebles_persona_natural`** (Art. 17 N° 8 letra b) — tope de 8.000
+   UF, plazo de 1/4 años, opción Global Complementario/Adicional vs. 10%
+   sustitutivo. Tiene un nodo `info` marcado explícitamente **"PENDIENTE DE
+   VALIDACIÓN LEGAL"**: el usuario recuerda que antes de cierta reforma no se
+   pagaba nada por este concepto — el año exacto del cambio de régimen
+   (probablemente Ley 20.780/20.899, 2014-2017) está en disposiciones
+   transitorias que no se verificaron, así que NO se inventó una fecha.
+2. **`venta_acciones_derechos_sociales`** (Art. 17 N° 8 letra a) — tope de 10
+   UTA (de minimis combinado entre letras a/c/d), compensación de pérdidas, y
+   la opción de reliquidar el mayor valor como renta devengada repartida hasta
+   10 años de tenencia. Sin puntos pendientes.
+3. **`boletas_honorarios`** (Art. 42 N° 2 + Art. 74 N° 2) — cubre persona
+   natural vs. sociedad de profesionales (con su opción irrevocable de
+   tributar en primera categoría), y cuándo aplica la retención. Tiene una
+   advertencia explícita: la tasa de retención (17% en el texto actual) viene
+   de un cronograma de alza gradual por la Ley 21.133 — se marcó para
+   confirmar la tasa vigente del año en curso, no darla por fija.
+
+### Código Tributario (DL-830) — el pedido explícito del usuario
+4. **`facultad_tasacion`** (Art. 64) — cuándo el SII puede tasar el precio/valor
+   de una operación que difiere notoriamente del mercado; excepción para
+   reorganizaciones empresariales con legítima razón de negocios (y la
+   contra-excepción si el destino es un territorio de baja/nula tributación);
+   caso especial de bienes raíces (tasa y gira de inmediato, sin citación
+   previa). 13 nodos, 7 caminos probados.
+5. **`termino_de_giro`** (Art. 69) — aviso normal vía carpeta tributaria
+   electrónica, término simplificado para PRO-PYME (Art. 14 D LIR), excepción
+   de aviso para conversión de empresa individual/fusión con responsabilidad
+   solidaria, y la facultad del SII de liquidar de oficio (con aumento de 1
+   año en la prescripción) cuando detecta un cierre no informado.
+6. **`notificaciones_validas`** (Art. 11 a 15) — correo electrónico (medio por
+   defecto desde la Ley 21.713), notificación personal, por cédula, y por
+   carta certificada (con el efecto de 3 meses de aumento en la prescripción
+   si la carta no se entrega). Es transversal: varios árboles ya existentes
+   preguntan "¿fue notificado válidamente?" sin explicar qué significa eso —
+   este árbol lo cubre.
+
+## Pendientes para mañana
+
+1. **El usuario va a revisar los 6 borradores** en `/review/drafts` (login
+   admin del panel Impuestia) antes de aprobarlos.
+2. **Confirmar los dos puntos marcados como pendientes de validación legal**
+   antes de aprobar esos árboles: el año de la reforma de 8.000 UF (inmuebles)
+   y la tasa de retención vigente del año en curso (honorarios) — buscar en
+   LeyChile (BCN) las disposiciones transitorias de Ley 20.780/20.899/21.210
+   para el primero, y el cronograma de Ley 21.133 para el segundo.
+3. **Seguir construyendo árboles del Código Tributario** — quedan temas
+   grandes sin cubrir: Norma General Anti-elusión (Art. 4 bis a quinquies),
+   delitos tributarios vs. infracciones simples (dentro de Art. 97, hoy solo
+   cubierto de forma genérica por el árbol 5), Revisión de la Actuación
+   Fiscalizadora. Evaluar cuáles priorizar con el usuario antes de seguir en
+   modo automático.
+4. Pendientes de sesiones anteriores sin resolver todavía: `TAVILY_API_KEY`,
+   `scripts/eval_graph_lift.py` (falta acumular más queries reales), y el
+   frontend de carga de documentos/pruebas de respuesta (pospuesto).
+
+## Palabras clave para recordar mañana
+
+> "**árboles**" (con contexto de continuar) → revisar con el usuario si ya
+> aprobó los 6 borradores de `/review/drafts`, resolver los 2 puntos
+> pendientes de validación legal, y seguir con más árboles del Código
+> Tributario (NGA, delitos tributarios, RAF) en modo automático salvo que algo
+> requiera su confirmación.
+
+## Archivos nuevos/modificados clave (sesión de hoy)
+
+- `decision_trees/_drafts/venta_inmuebles_persona_natural.json` (nuevo)
+- `decision_trees/_drafts/venta_acciones_derechos_sociales.json` (nuevo)
+- `decision_trees/_drafts/boletas_honorarios.json` (nuevo)
+- `decision_trees/_drafts/facultad_tasacion.json` (nuevo)
+- `decision_trees/_drafts/termino_de_giro.json` (nuevo)
+- `decision_trees/_drafts/notificaciones_validas.json` (nuevo)

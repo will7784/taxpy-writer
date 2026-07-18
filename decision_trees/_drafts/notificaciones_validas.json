@@ -1,0 +1,152 @@
+{
+  "tree_id": "notificaciones_validas",
+  "title": "Validez de las Notificaciones del SII",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 11 a 15",
+  "description": "Determina si una notificación del SII (por correo electrónico, personal, por cédula, o por carta certificada) es válida y desde cuándo empiezan a correr los plazos.",
+  "tags": [
+    "notificacion",
+    "notificacion valida",
+    "correo electronico",
+    "carta certificada",
+    "cedula",
+    "domicilio",
+    "plazos"
+  ],
+  "root": {
+    "type": "decision",
+    "id": "root",
+    "question": "¿La notificación se hizo (o se pretende hacer) por correo electrónico?",
+    "help": "Desde la reforma de la Ley 21.713, el correo electrónico es la forma por defecto de notificación del SII.",
+    "legal_ref": "Art. 11, inciso 1°, CT",
+    "branches": [
+      {
+        "condition": "fue_por_correo",
+        "next_node": "validez_correo"
+      },
+      {
+        "condition": "no_fue_por_correo",
+        "next_node": "metodo_alternativo"
+      }
+    ]
+  },
+  "nodes": {
+    "validez_correo": {
+      "type": "decision",
+      "question": "¿El contribuyente tiene un correo electrónico registrado y vigente en su sitio personal ante el SII, y NO se encuentra en una situación de excepción (sin medios tecnológicos, sin acceso a medios electrónicos, o domiciliado en zona de baja/nula conectividad)?",
+      "legal_ref": "Art. 11, incisos 1° y 2°, CT",
+      "branches": [
+        {
+          "condition": "correo_valido",
+          "next_node": "result_notif_correo_valida"
+        },
+        {
+          "condition": "correo_no_valido",
+          "next_node": "result_notif_correo_invalida"
+        }
+      ]
+    },
+    "metodo_alternativo": {
+      "type": "decision",
+      "question": "¿Cuál de estos métodos se usó: notificación personal, por cédula, o por carta certificada?",
+      "legal_ref": "Art. 12 y 13, CT",
+      "branches": [
+        {
+          "condition": "fue_personal",
+          "next_node": "result_notif_personal"
+        },
+        {
+          "condition": "fue_cedula",
+          "next_node": "result_notif_cedula"
+        },
+        {
+          "condition": "fue_carta_certificada",
+          "next_node": "entrega_carta"
+        }
+      ]
+    },
+    "entrega_carta": {
+      "type": "decision",
+      "question": "¿La carta certificada fue efectivamente entregada al notificado o a una persona adulta en su domicilio (o retirada de la casilla/apartado postal, si el contribuyente fijó domicilio postal) dentro de los 15 días desde su envío?",
+      "legal_ref": "Art. 11, inciso 5°, CT",
+      "branches": [
+        {
+          "condition": "carta_entregada",
+          "next_node": "result_notif_carta_entregada"
+        },
+        {
+          "condition": "carta_no_entregada",
+          "next_node": "result_notif_carta_no_entregada"
+        }
+      ]
+    },
+    "result_notif_correo_valida": {
+      "type": "result",
+      "summary": "La notificación por correo electrónico es válida.",
+      "details": "Se entiende practicada en la fecha de envío (certificada por un ministro de fe), incluso si se envía en días u horas inhábiles. El correo debe contener una transcripción de la actuación del Servicio con los datos necesarios para su acertada inteligencia. La falta de recepción por circunstancias ajenas al Servicio NO anula la notificación, salvo que el contribuyente acredite caso fortuito o fuerza mayor.",
+      "warnings": [
+        "El contribuyente debe mantener actualizado su correo electrónico ante el SII — un cambio de correo solo produce efectos desde el día hábil siguiente a que se informe al Servicio (Art. 68 CT)."
+      ],
+      "next_steps": [
+        "Verificar en el sitio personal del contribuyente la imagen digital de la notificación y su fecha de envío certificada"
+      ],
+      "legal_refs": [
+        "Art. 11, inciso 1°, CT",
+        "Art. 11 bis, CT"
+      ]
+    },
+    "result_notif_correo_invalida": {
+      "type": "result",
+      "summary": "La notificación por correo electrónico NO es válida en este caso — corresponde notificar personalmente, por cédula, o por carta certificada en su lugar.",
+      "details": "Esto ocurre cuando el contribuyente no ha registrado un correo electrónico ante el SII, se encuentra en una situación de excepción (carece de medios tecnológicos, no tiene acceso a medios electrónicos, o solo actúa excepcionalmente a través de ellos, habiéndolo acreditado ante el Servicio), está domiciliado en una zona de baja o nula conectividad, o una disposición legal expresa exige una forma distinta de notificación.",
+      "warnings": [
+        "Si por disposición legal no procede la notificación por correo electrónico, el SII igualmente debe remitir una copia por correo electrónico como AVISO — pero ese aviso no es la notificación misma, y su omisión o defecto no vicia la notificación practicada por el otro medio."
+      ],
+      "next_steps": [
+        "Determinar cuál de los tres métodos alternativos corresponde (personal, por cédula, o por carta certificada) y evaluar su validez con ese criterio"
+      ],
+      "legal_refs": [
+        "Art. 11, incisos 1° a 3°, CT"
+      ]
+    },
+    "result_notif_personal": {
+      "type": "result",
+      "summary": "La notificación personal es válida si se entregó al notificado, personalmente, copia íntegra de la resolución o documento, en cualquier lugar donde se le encontró.",
+      "details": "La notificación debe constar por escrito, dejada por el funcionario a cargo, con indicación del día, hora y lugar en que se practicó.",
+      "legal_refs": [
+        "Art. 12, inciso 2°, CT"
+      ]
+    },
+    "result_notif_cedula": {
+      "type": "result",
+      "summary": "La notificación por cédula es válida si se entregó copia íntegra de la resolución o actuación en el domicilio del notificado, a él o a cualquier persona adulta que se encontrara ahí.",
+      "details": "Si no había ninguna persona adulta que la recibiera, se deja la cédula en ese domicilio igualmente y se envía un aviso por carta certificada al notificado el mismo día. La omisión o extravío de ese aviso NO anula la notificación por cédula ya practicada.",
+      "legal_refs": [
+        "Art. 12, inciso 1°, CT"
+      ]
+    },
+    "result_notif_carta_entregada": {
+      "type": "result",
+      "summary": "La notificación por carta certificada es válida. Los plazos empiezan a correr 3 días después del envío de la carta, no desde su entrega efectiva.",
+      "details": "La carta puede ser entregada por el funcionario de correos a cualquier persona adulta en el domicilio del notificado; o si hay domicilio postal fijado, debe remitirse a la casilla/apartado postal correspondiente y entregarse al interesado o a quien tenga poder para retirar su correspondencia, debiendo firmar el recibo en ambos casos.",
+      "legal_refs": [
+        "Art. 11, incisos 4° y 6°, CT"
+      ]
+    },
+    "result_notif_carta_no_entregada": {
+      "type": "result",
+      "summary": "Si el funcionario de correos no encontró al notificado ni a otra persona adulta, se negaron a recibir/firmar, o no se retiró la carta de la casilla postal dentro de 15 días desde el envío, se deja constancia y la carta se devuelve al SII — y los plazos de prescripción del Art. 200 CT se aumentan o renuevan en 3 meses, contados desde la recepción de la carta devuelta.",
+      "warnings": [
+        "Si durante un mismo proceso de fiscalización se producen al menos 2 intentos de notificación sin resultado (con al menos 15 días corridos entre cada intento), el SII puede notificar a través del sitio personal del contribuyente en su página web, certificado por un ministro de fe — con publicación de un extracto en un diario de circulación nacional (Art. 13, inciso 4°, CT)."
+      ],
+      "next_steps": [
+        "Revisar el árbol de Prescripción de la Acción Tributaria considerando este aumento de 3 meses",
+        "Verificar si corresponde la vía de notificación por página web tras intentos fallidos reiterados"
+      ],
+      "legal_refs": [
+        "Art. 11, inciso 5°, CT",
+        "Art. 200, CT"
+      ]
+    }
+  }
+}

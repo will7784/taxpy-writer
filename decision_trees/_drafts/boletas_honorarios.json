@@ -1,0 +1,136 @@
+{
+  "tree_id": "boletas_honorarios",
+  "title": "Tributación de Boletas de Honorarios (Trabajo Independiente)",
+  "law": "Ley sobre Impuesto a la Renta (DL-824)",
+  "article": "Art. 42 N° 2 y Art. 74 N° 2",
+  "description": "Determina cómo tributan los ingresos por boletas de honorarios (profesiones liberales, ocupación lucrativa independiente) y qué retención aplica.",
+  "tags": [
+    "boleta honorarios",
+    "honorarios",
+    "profesion liberal",
+    "trabajo independiente",
+    "retencion",
+    "segunda categoria"
+  ],
+  "root": {
+    "type": "decision",
+    "id": "root",
+    "question": "¿El ingreso proviene del ejercicio independiente de una profesión liberal, oficio o técnica (boleta de honorarios), donde predomina el trabajo personal sobre el uso de capital o maquinaria?",
+    "help": "Este árbol cubre el Art. 42 N° 2 LIR — rentas de segunda categoría por trabajo independiente. No incluye sueldos por relación de dependencia (Art. 42 N° 1) ni actividades donde predomina el capital/maquinaria sobre el trabajo personal (esas tributan en primera categoría, Art. 20).",
+    "legal_ref": "Art. 42 N° 2, LIR (DL-824)",
+    "branches": [
+      {
+        "condition": "es_boleta_honorarios",
+        "next_node": "tipo_emisor"
+      },
+      {
+        "condition": "no_es_boleta_honorarios",
+        "next_node": "result_no_aplica"
+      }
+    ]
+  },
+  "nodes": {
+    "tipo_emisor": {
+      "type": "decision",
+      "question": "¿Quién emite la boleta: una persona natural, o una sociedad de profesionales que presta exclusivamente servicios o asesorías profesionales?",
+      "help": "Las sociedades de profesionales que exploten clínicas, maternidades, laboratorios u otros establecimientos análogos NO quedan comprendidas en este régimen — revisar si corresponde primera categoría (Art. 20) en esos casos.",
+      "legal_ref": "Art. 42 N° 2, incisos 1° y 4°, LIR",
+      "branches": [
+        {
+          "condition": "persona_natural",
+          "next_node": "retencion"
+        },
+        {
+          "condition": "sociedad_profesionales",
+          "next_node": "opcion_primera_categoria"
+        }
+      ]
+    },
+    "opcion_primera_categoria": {
+      "type": "decision",
+      "question": "¿La sociedad de profesionales optó por declarar sus rentas según las normas de primera categoría (declaración al SII dentro de los primeros 3 meses del año comercial)?",
+      "help": "Esta opción es IRREVOCABLE: una vez que la sociedad de profesionales opta por primera categoría, no puede volver al régimen de segunda categoría/honorarios.",
+      "legal_ref": "Art. 42 N° 2, inciso 3°, LIR",
+      "branches": [
+        {
+          "condition": "opto_primera_categoria",
+          "next_node": "result_primera_categoria"
+        },
+        {
+          "condition": "no_opto",
+          "next_node": "retencion"
+        }
+      ]
+    },
+    "retencion": {
+      "type": "decision",
+      "question": "¿Quién paga la boleta: una institución fiscal/semifiscal/municipalidad, una persona jurídica, o una persona que obtiene rentas de primera categoría y está obligada a llevar contabilidad?",
+      "help": "Si el pagador es uno de estos, está obligado por ley a retener. Si el pagador es una persona natural sin esas características (por ejemplo, un particular contratando un servicio puntual), no hay obligación de retención sobre él.",
+      "legal_ref": "Art. 74 N° 2, LIR",
+      "branches": [
+        {
+          "condition": "pagador_obligado_retener",
+          "next_node": "result_con_retencion"
+        },
+        {
+          "condition": "pagador_no_obligado",
+          "next_node": "result_sin_retencion"
+        }
+      ]
+    },
+    "result_no_aplica": {
+      "type": "result",
+      "summary": "Este árbol no aplica a este ingreso — revisa si corresponde el régimen de primera categoría (Art. 20 LIR, actividades que usan predominantemente capital/maquinaria) o el de sueldos por relación de dependencia (Art. 42 N° 1).",
+      "legal_refs": [
+        "Art. 42 N° 2, LIR (DL-824)"
+      ]
+    },
+    "result_primera_categoria": {
+      "type": "result",
+      "summary": "La sociedad de profesionales tributa según las normas de primera categoría, sujetándose a esas disposiciones para todos los efectos de la LIR — ya no aplican las reglas de boletas de honorarios ni la retención del Art. 74 N° 2.",
+      "details": "El régimen se aplica desde el mismo año comercial en que se presentó la declaración de opción al SII. Para el primer ejercicio, el porcentaje de Pagos Provisionales Mensuales (PPM) se calcula según la relación entre los ingresos brutos del año comercial anterior y el impuesto de primera categoría que hubiera correspondido, pudiendo abonar las retenciones o PPM ya efectuados en ese ejercicio bajo las reglas de honorarios.",
+      "warnings": [
+        "La opción es irrevocable: no se puede volver al régimen de segunda categoría/honorarios una vez ejercida."
+      ],
+      "next_steps": [
+        "Llevar contabilidad según las normas de primera categoría",
+        "Declarar y pagar PPM según el régimen de primera categoría que corresponda"
+      ],
+      "legal_refs": [
+        "Art. 42 N° 2, inciso 3°, LIR (DL-824)"
+      ]
+    },
+    "result_con_retencion": {
+      "type": "result",
+      "summary": "El pagador debe retener sobre el monto bruto de la boleta a una tasa provisional que ha subido gradualmente por la Ley 21.133 (Reforma Previsional) — VERIFICAR la tasa exacta vigente para el año en curso antes de calcular. Al momento de esta extracción del texto legal, la tasa indicada era 17%.",
+      "details": "La retención la practican instituciones fiscales/semifiscales, municipalidades, personas jurídicas en general, y quienes obtengan rentas de primera categoría y estén obligados a llevar contabilidad, cuando paguen rentas del Art. 42 N° 2. Esa retención opera como pago provisional: se puede imputar contra el Impuesto Global Complementario que se declare en abril del año siguiente, o contra los Pagos Provisionales Mensuales (PPM) del Art. 84 letra b) si el contribuyente también genera boletas sin retención.",
+      "warnings": [
+        "La tasa de retención del Art. 74 N° 2 ha estado en un cronograma de alza gradual por la Ley 21.133 — NO asumir que 17% sigue siendo la tasa vigente sin confirmar el año tributario correspondiente."
+      ],
+      "next_steps": [
+        "Confirmar la tasa de retención vigente para el año tributario correspondiente antes de informarla al contribuyente",
+        "Sumar el total de honorarios brutos y retenciones del año para la declaración de abril",
+        "Evaluar si conviene hacer PPM voluntarios adicionales para no tener que pagar una diferencia alta en abril"
+      ],
+      "legal_refs": [
+        "Art. 74 N° 2, LIR (DL-824)"
+      ]
+    },
+    "result_sin_retencion": {
+      "type": "result",
+      "summary": "El pagador no está obligado a retener el 17% (por ejemplo, es una persona natural sin las características del Art. 74 N° 2) — pero el emisor de la boleta igual debe hacer Pagos Provisionales Mensuales (PPM) por su cuenta y declarar el total en el Global Complementario de abril.",
+      "details": "Sin retención, la responsabilidad de ir pagando el impuesto durante el año recae en el propio emisor de la boleta, mediante PPM voluntarios/obligatorios según el Art. 84 letra b) LIR, calculados sobre los ingresos brutos percibidos.",
+      "warnings": [
+        "No hacer PPM durante el año puede resultar en una diferencia de impuesto alta y sin cobertura al momento de declarar en abril."
+      ],
+      "next_steps": [
+        "Calcular y pagar PPM mensuales según el Art. 84 letra b) LIR sobre los ingresos brutos percibidos",
+        "Declarar el total de ingresos por honorarios en el Global Complementario en abril del año siguiente"
+      ],
+      "legal_refs": [
+        "Art. 74 N° 2, LIR (DL-824)",
+        "Art. 84 letra b), LIR (DL-824)"
+      ]
+    }
+  }
+}

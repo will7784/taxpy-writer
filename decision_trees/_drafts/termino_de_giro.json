@@ -1,0 +1,130 @@
+{
+  "tree_id": "termino_de_giro",
+  "title": "Término de Giro",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 69",
+  "description": "Determina las obligaciones del contribuyente al terminar su giro comercial, industrial o sus actividades, y qué pasa si el SII detecta un término de giro no informado.",
+  "tags": [
+    "termino de giro",
+    "termino de actividades",
+    "cierre de empresa",
+    "balance final",
+    "fusion",
+    "conversion empresa individual"
+  ],
+  "root": {
+    "type": "decision",
+    "id": "root",
+    "question": "¿El contribuyente terminó su giro comercial/industrial o sus actividades y dejó de estar afecto a impuestos?",
+    "legal_ref": "Art. 69, inciso 1°, CT",
+    "branches": [
+      {
+        "condition": "contribuyente_da_aviso",
+        "next_node": "excepcion_conversion"
+      },
+      {
+        "condition": "sii_detecta_sin_aviso_previo",
+        "next_node": "result_sii_detecta"
+      }
+    ]
+  },
+  "nodes": {
+    "excepcion_conversion": {
+      "type": "decision",
+      "question": "¿Se trata de una empresa individual que se convierte en sociedad, o de una fusión/aporte de todo el activo y pasivo, donde la nueva entidad se hace responsable solidariamente de todos los impuestos adeudados en la escritura respectiva?",
+      "help": "Esta excepción libera de dar el AVISO de término de giro, pero NO libera de otras obligaciones: igual hay que informar la modificación al SII (Art. 68 CT), hacer un balance de término de giro a la fecha de disolución, y pagar los impuestos de la LIR dentro de plazo.",
+      "legal_ref": "Art. 69, inciso 8°, CT",
+      "branches": [
+        {
+          "condition": "cumple_excepcion_responsabilidad_solidaria",
+          "next_node": "result_exento_aviso"
+        },
+        {
+          "condition": "no_cumple_excepcion",
+          "next_node": "regimen_termino_giro"
+        }
+      ]
+    },
+    "regimen_termino_giro": {
+      "type": "decision",
+      "question": "¿El contribuyente está acogido al régimen PRO-PYME (Art. 14 letra D de la LIR) y quiere usar el término de giro simplificado?",
+      "legal_ref": "Art. 69, inciso 10°, CT",
+      "branches": [
+        {
+          "condition": "propyme_termino_simplificado",
+          "next_node": "result_termino_simplificado"
+        },
+        {
+          "condition": "regimen_general",
+          "next_node": "result_termino_giro_normal"
+        }
+      ]
+    },
+    "result_exento_aviso": {
+      "type": "result",
+      "summary": "No es necesario dar el aviso de término de giro para esta conversión/fusión, porque la nueva entidad asume solidariamente las deudas tributarias en la escritura respectiva.",
+      "details": "Aun estando exento del aviso, subsisten otras obligaciones: informar la modificación al SII a través de la carpeta tributaria electrónica (Art. 68 CT), hacer un balance de término de giro a la fecha de disolución, y la sociedad que se crea o subsiste debe pagar los impuestos de la Ley de Impuesto a la Renta dentro del plazo de 2 meses del inciso 1° del Art. 69, y los demás impuestos dentro de sus plazos legales.",
+      "warnings": [
+        "La responsabilidad solidaria debe constar expresamente en la escritura social o de aporte/fusión — no basta con la intención, debe quedar documentada."
+      ],
+      "next_steps": [
+        "Redactar la escritura con la cláusula de responsabilidad solidaria por los impuestos adeudados",
+        "Informar la modificación al SII vía carpeta tributaria electrónica (Art. 68 CT)",
+        "Preparar el balance de término de giro a la fecha de disolución"
+      ],
+      "legal_refs": [
+        "Art. 69, inciso 8°, CT",
+        "Art. 68, CT"
+      ]
+    },
+    "result_termino_giro_normal": {
+      "type": "result",
+      "summary": "El contribuyente debe dar aviso al SII a través de la carpeta tributaria electrónica, adjuntando el balance de término de giro, y pagar el impuesto determinado dentro de los 2 meses siguientes a la fecha de término del giro o actividades.",
+      "details": "Presentado el aviso, el SII tiene un plazo de 6 meses para revisar y girar directamente cualquier diferencia de impuestos (ampliable en 3 meses más si el SII toma conocimiento de nuevos antecedentes, el contribuyente presenta antecedentes adicionales, o se establece por resolución fundada que las declaraciones son maliciosamente falsas). Si el SII no se pronuncia dentro de esos plazos, se entiende aceptada la declaración del contribuyente y este puede solicitar el giro inmediato conforme a su propia declaración. Una vez aceptada o tenida por aceptada la declaración, el SII queda inhibido de fiscalizar de nuevo y debe notificar el cierre definitivo dentro de 15 días.",
+      "warnings": [
+        "Contribuyentes en zonas sin cobertura de datos móviles/fijos, sin acceso a energía eléctrica, o en zona de catástrofe, no están obligados a usar la carpeta electrónica y pueden hacer el trámite presencialmente en el SII."
+      ],
+      "next_steps": [
+        "Presentar el aviso de término de giro con el balance final dentro de plazo",
+        "Pagar el impuesto determinado dentro de los 2 meses desde el término del giro o actividades",
+        "Conservar la documentación por si el SII solicita antecedentes adicionales dentro de su plazo de revisión"
+      ],
+      "legal_refs": [
+        "Art. 69, incisos 1° a 5°, CT"
+      ]
+    },
+    "result_termino_simplificado": {
+      "type": "result",
+      "summary": "Los contribuyentes PRO-PYME (Art. 14 letra D LIR) pueden solicitar un término de giro simplificado, acompañando además una declaración en escritura pública donde los dueños, socios, accionistas o comuneros se hacen responsables solidarios de las deudas tributarias de la empresa.",
+      "details": "Con esta modalidad, el SII tiene un plazo de 1 mes para girar los impuestos conforme a la declaración del contribuyente y certificar el término de giro una vez verificado el pago. Sin perjuicio de eso, el SII puede girar diferencias de impuestos o iniciar fiscalización dentro de un plazo de 6 meses desde la solicitud (ampliable en 3 meses en los mismos casos que el régimen general), notificando en ese caso a los socios, accionistas o comuneros.",
+      "warnings": [
+        "La responsabilidad solidaria de los socios/accionistas/comuneros debe constar expresamente en la escritura pública."
+      ],
+      "next_steps": [
+        "Verificar que el contribuyente esté efectivamente acogido al Art. 14 letra D LIR antes de usar esta vía",
+        "Redactar la escritura pública con la cláusula de responsabilidad solidaria",
+        "Presentar la solicitud junto con el balance y antecedentes del régimen general"
+      ],
+      "legal_refs": [
+        "Art. 69, inciso 10°, CT",
+        "Art. 14 letra D, LIR (DL-824)"
+      ]
+    },
+    "result_sii_detecta": {
+      "type": "result",
+      "summary": "El SII puede citar al contribuyente (conforme al Art. 63 CT) y liquidar/girar los impuestos correspondientes, como si el contribuyente hubiera hecho el trámite formal de término de giro — y el plazo de prescripción del Art. 200 CT se aumenta en 1 año desde que se notifica esa citación.",
+      "details": "Esto aplica cuando el SII cuenta con antecedentes de que una persona, entidad o agrupación sin personalidad jurídica cesó su giro o actividades sin haber dado el aviso correspondiente. El aumento de 1 año en el plazo de prescripción afecta tanto a la empresa/entidad como a sus propietarios, comuneros, aportantes, socios o accionistas.",
+      "warnings": [
+        "El aumento de 1 año en la prescripción se cuenta desde la notificación de la citación, no desde el término de giro real — puede alargar significativamente el período fiscalizable."
+      ],
+      "next_steps": [
+        "Responder oportunamente a la citación del SII con los antecedentes disponibles",
+        "Revisar el árbol de Prescripción de la Acción Tributaria considerando este aumento de plazo específico"
+      ],
+      "legal_refs": [
+        "Art. 69, incisos 13° y 14°, CT",
+        "Art. 200, CT"
+      ]
+    }
+  }
+}

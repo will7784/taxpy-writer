@@ -1,0 +1,129 @@
+{
+  "tree_id": "venta_inmuebles_persona_natural",
+  "title": "Venta de Inmuebles por Persona Natural",
+  "law": "Ley sobre Impuesto a la Renta (DL-824)",
+  "article": "Art. 17 N° 8 letra b)",
+  "description": "Determina el tratamiento tributario del mayor valor obtenido por una persona natural al vender un bien raíz: si es ingreso no constitutivo de renta, si aplica el tope de 8.000 UF, y qué impuesto corresponde sobre el excedente.",
+  "tags": [
+    "venta inmueble",
+    "bien raiz",
+    "8000 uf",
+    "mayor valor",
+    "enajenacion inmueble",
+    "persona natural",
+    "propiedad"
+  ],
+  "root": {
+    "type": "decision",
+    "id": "root",
+    "question": "¿El inmueble que se vende pertenece a una persona natural y NO está asignado a una empresa individual de esa persona?",
+    "help": "Este árbol cubre el Art. 17 N° 8 letra b) LIR — venta de inmuebles por personas naturales fuera de su giro empresarial. Si el bien es un activo de una empresa (individual o societaria), no aplica este régimen sino las reglas generales de renta de esa empresa.",
+    "legal_ref": "Art. 17 N° 8, encabezado, LIR (DL-824)",
+    "branches": [
+      {
+        "condition": "persona_natural_sin_empresa",
+        "next_node": "plazo_tenencia"
+      },
+      {
+        "condition": "bien_de_empresa",
+        "next_node": "result_no_aplica"
+      }
+    ]
+  },
+  "nodes": {
+    "plazo_tenencia": {
+      "type": "decision",
+      "question": "¿Han transcurrido más de 1 año entre la adquisición y la venta del inmueble? (4 años si el inmueble proviene de una subdivisión de terrenos o de la construcción de un edificio por pisos/departamentos)",
+      "help": "El plazo se cuenta desde la adquisición (o desde la construcción/subdivisión, en el caso especial de 4 años) hasta la venta.",
+      "legal_ref": "Art. 17 N° 8 letra b), numeral iv), LIR",
+      "branches": [
+        {
+          "condition": "cumple_plazo",
+          "next_node": "vigencia_pendiente"
+        },
+        {
+          "condition": "no_cumple_plazo",
+          "next_node": "result_no_cumple_plazo"
+        }
+      ]
+    },
+    "vigencia_pendiente": {
+      "type": "info",
+      "legal_ref": "Disposiciones transitorias Ley 20.780, Ley 20.899, Ley 21.210 — PENDIENTE DE CONFIRMAR",
+      "summary": "PENDIENTE DE VALIDACIÓN LEGAL: las reglas siguientes (tope de 8.000 UF) corresponden al texto vigente de Art. 17 N° 8 letra b), última modificación por Ley 21.210 (D.O. 24.02.2020). Si el inmueble fue adquirido ANTES de la reforma que introdujo el tope de 8.000 UF (aprox. Ley 20.780/20.899, 2014-2017), podría existir un régimen transitorio distinto que este árbol todavía NO modela. Antes de aprobar este árbol, confirmar el texto exacto de las disposiciones transitorias de esas leyes en LeyChile (BCN).",
+      "next_node": "tope_8000uf"
+    },
+    "tope_8000uf": {
+      "type": "decision",
+      "question": "¿El mayor valor obtenido (precio de venta menos costo tributario del inmueble), sumado a otras ventas de inmuebles previas del mismo vendedor, supera las 8.000 UF?",
+      "help": "El tope de 8.000 UF es acumulado por contribuyente a lo largo de su vida, no por venta individual. El costo tributario incluye el valor de adquisición reajustado más mejoras declaradas ante el SII antes de la venta.",
+      "legal_ref": "Art. 17 N° 8 letra b), numeral ii), LIR",
+      "branches": [
+        {
+          "condition": "no_supera_8000uf",
+          "next_node": "result_no_renta"
+        },
+        {
+          "condition": "supera_8000uf",
+          "next_node": "result_excedente"
+        }
+      ]
+    },
+    "result_no_aplica": {
+      "type": "result",
+      "summary": "Este árbol no aplica: el inmueble está asignado a una empresa, así que se rige por las reglas generales de renta de esa empresa, no por el Art. 17 N° 8 letra b) de personas naturales.",
+      "legal_refs": [
+        "Art. 17 N° 8, encabezado, LIR (DL-824)"
+      ]
+    },
+    "result_no_cumple_plazo": {
+      "type": "result",
+      "summary": "No se cumple el plazo mínimo de tenencia, así que NO aplica el tratamiento de ingreso no constitutivo de renta ni el tope de 8.000 UF: el mayor valor se grava en su totalidad con las reglas generales de tributación (renta ordinaria).",
+      "details": "El Art. 17 N° 8 letra b) numeral iv) exige que transcurra más de 1 año entre adquisición y venta (4 años si el inmueble proviene de subdivisión de terrenos o construcción de edificios por pisos/departamentos) para que apliquen el beneficio de ingreso no renta y el tope de 8.000 UF. Si no se cumple ese plazo, todo el mayor valor tributa según las reglas generales, sin el beneficio.",
+      "warnings": [
+        "Verificar la fecha exacta de adquisición y de venta con documentación (escritura, inscripción en el Conservador de Bienes Raíces) antes de concluir que no se cumple el plazo."
+      ],
+      "next_steps": [
+        "Calcular el mayor valor total (precio de venta menos costo tributario reajustado)",
+        "Declarar el mayor valor como renta ordinaria según el régimen tributario del contribuyente",
+        "Consultar si corresponde algún crédito por impuesto de herencia si el bien se adquirió por sucesión"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra b), numeral iv), LIR (DL-824)"
+      ]
+    },
+    "result_no_renta": {
+      "type": "result",
+      "summary": "El mayor valor obtenido es ingreso no constitutivo de renta: no se paga impuesto sobre esa ganancia.",
+      "details": "Como el mayor valor (acumulado con otras ventas de inmuebles del mismo vendedor) no supera las 8.000 UF, y se cumple el plazo mínimo de tenencia, el Art. 17 N° 8 letra b) numeral ii) LIR establece que esa ganancia no constituye renta. El costo tributario que se resta del precio de venta incluye el valor de adquisición reajustado por IPC más las mejoras declaradas ante el SII antes de la venta.",
+      "warnings": [
+        "El tope de 8.000 UF es acumulado de por vida del contribuyente, no por venta — si ya usó parte del tope en ventas anteriores, el remanente disponible es menor.",
+        "Confirmar el punto de vigencia/fecha de adquisición marcado en el nodo anterior antes de dar esta respuesta como definitiva."
+      ],
+      "next_steps": [
+        "Conservar la documentación del costo tributario (escritura de compra, mejoras declaradas al SII) por si el SII solicita acreditación",
+        "Verificar si el vendedor ya usó parte del tope de 8.000 UF en ventas anteriores de inmuebles"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra b), numeral ii), LIR (DL-824)"
+      ]
+    },
+    "result_excedente": {
+      "type": "result",
+      "summary": "El excedente sobre las 8.000 UF se grava, a elección del vendedor: con el Impuesto Global Complementario o Adicional (según domicilio/residencia), o con un impuesto único y sustitutivo de 10% sobre base percibida.",
+      "details": "La parte del mayor valor hasta 8.000 UF sigue siendo ingreso no constitutivo de renta (Art. 17 N° 8 letra b) numeral ii)). Solo el excedente sobre ese tope se grava. El contribuyente puede elegir entre tributar ese excedente con el Impuesto Global Complementario (si tiene domicilio o residencia en Chile) o Adicional (si no la tiene), aplicado sobre renta percibida en base progresiva; o bien, si tiene domicilio o residencia en Chile, optar por un impuesto único y sustitutivo del 10% sobre el mismo excedente, en base percibida.",
+      "warnings": [
+        "La elección del impuesto único del 10% solo está disponible para personas naturales con domicilio o residencia en Chile.",
+        "Confirmar el punto de vigencia/fecha de adquisición marcado en el nodo anterior antes de dar esta respuesta como definitiva."
+      ],
+      "next_steps": [
+        "Calcular el excedente sobre 8.000 UF",
+        "Evaluar cuál opción de tributación conviene más al contribuyente (Global Complementario/Adicional vs. 10% sustitutivo) según su situación tributaria general",
+        "Declarar en el Formulario 22 según la opción elegida"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra b), numerales ii) y iii), LIR (DL-824)"
+      ]
+    }
+  }
+}

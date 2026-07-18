@@ -1,0 +1,181 @@
+{
+  "tree_id": "facultad_tasacion",
+  "title": "Facultad de Tasación del SII",
+  "law": "Código Tributario (DL-830)",
+  "article": "Art. 64",
+  "description": "Determina cuándo el SII puede tasar el precio o valor de un acto, convención u operación cuando difiere notoriamente del valor de mercado, y las excepciones para reorganizaciones empresariales.",
+  "tags": [
+    "tasacion",
+    "facultad de tasacion",
+    "precio de mercado",
+    "reorganizacion empresarial",
+    "fusion",
+    "division",
+    "bien raiz"
+  ],
+  "root": {
+    "type": "decision",
+    "id": "root",
+    "question": "¿El SII está cuestionando el precio o valor asignado a un acto, convención u operación porque difiere notoriamente de los valores normales de mercado?",
+    "help": "Valores normales de mercado son los que habrían acordado partes no relacionadas en operaciones y circunstancias comparables.",
+    "legal_ref": "Art. 64, inciso 1°, CT",
+    "branches": [
+      {
+        "condition": "si_cuestiona_precio",
+        "next_node": "es_reorganizacion"
+      },
+      {
+        "condition": "no_cuestiona_precio",
+        "next_node": "result_no_aplica"
+      }
+    ]
+  },
+  "nodes": {
+    "es_reorganizacion": {
+      "type": "decision",
+      "question": "¿La operación es una fusión, división, u otra reorganización empresarial (incluyendo aporte de activos o conversión de empresario individual)?",
+      "legal_ref": "Art. 64, incisos 8° a 11°, CT",
+      "branches": [
+        {
+          "condition": "es_reorganizacion",
+          "next_node": "requisitos_reorganizacion"
+        },
+        {
+          "condition": "no_es_reorganizacion",
+          "next_node": "tipo_bien"
+        }
+      ]
+    },
+    "requisitos_reorganizacion": {
+      "type": "decision",
+      "question": "¿La reorganización cumple TODOS estos requisitos: existe una legítima razón de negocios (distinta de la meramente tributaria), se mantiene el costo tributario de los activos, y no se originan flujos efectivos de dinero para el aportante?",
+      "help": "Legítima razón de negocios incluye, por ejemplo: mejorar condiciones del negocio, obtener ventajas competitivas, financiamiento, reducir costos o riesgos, aumentar capacidad productiva u otra finalidad similar distinta de la meramente tributaria.",
+      "legal_ref": "Art. 64, incisos 9° a 12°, CT",
+      "branches": [
+        {
+          "condition": "cumple_requisitos",
+          "next_node": "destino_es_paraiso_fiscal"
+        },
+        {
+          "condition": "no_cumple_requisitos",
+          "next_node": "result_procede_tasacion_reorg"
+        }
+      ]
+    },
+    "destino_es_paraiso_fiscal": {
+      "type": "decision",
+      "question": "¿La reorganización traslada la propiedad de bienes, acciones o derechos situados en Chile hacia entidades domiciliadas en países/territorios de baja o nula tributación (Art. 41 H LIR), o liberados de llevar contabilidad según normas de aplicación general?",
+      "help": "Aunque se cumplan los demás requisitos de legítima razón de negocios, esta excepción especial SÍ permite que proceda la facultad de tasación cuando el destino es uno de estos territorios.",
+      "legal_ref": "Art. 64, inciso 13°, CT",
+      "branches": [
+        {
+          "condition": "destino_paraiso_fiscal",
+          "next_node": "result_procede_tasacion_reorg"
+        },
+        {
+          "condition": "destino_normal",
+          "next_node": "result_no_procede_tasacion"
+        }
+      ]
+    },
+    "tipo_bien": {
+      "type": "decision",
+      "question": "¿Se trata específicamente de la tasación del precio o valor de un bien raíz?",
+      "legal_ref": "Art. 64, inciso 6°, CT",
+      "branches": [
+        {
+          "condition": "es_bien_raiz",
+          "next_node": "result_tasacion_inmediata_giro"
+        },
+        {
+          "condition": "no_es_bien_raiz",
+          "next_node": "proceso_citacion"
+        }
+      ]
+    },
+    "proceso_citacion": {
+      "type": "info",
+      "legal_ref": "Art. 64, inciso 3°, CT",
+      "summary": "Antes de tasar (fuera del caso especial de bienes raíces), el SII debe citar al contribuyente conforme al Art. 63 CT para que aporte antecedentes que acrediten que la operación se hizo a valores normales de mercado. El contribuyente puede acompañar un informe de valoración.",
+      "next_node": "respuesta_citacion"
+    },
+    "respuesta_citacion": {
+      "type": "decision",
+      "question": "¿El contribuyente logró acreditar, en respuesta a la citación, que la operación se hizo a valores normales de mercado?",
+      "legal_ref": "Art. 64, incisos 3° y 4°, CT",
+      "branches": [
+        {
+          "condition": "acredito_valor_mercado",
+          "next_node": "result_no_tasacion"
+        },
+        {
+          "condition": "no_acredito_o_no_responde",
+          "next_node": "result_tasacion_general"
+        }
+      ]
+    },
+    "result_no_aplica": {
+      "type": "result",
+      "summary": "No aplica la facultad de tasación del Art. 64 CT — el SII no está cuestionando el precio o valor de una operación por diferir de los valores normales de mercado.",
+      "legal_refs": [
+        "Art. 64, inciso 1°, CT"
+      ]
+    },
+    "result_no_procede_tasacion": {
+      "type": "result",
+      "summary": "No procede la facultad de tasación: la reorganización cumple los requisitos de legítima razón de negocios, mantención del costo tributario, ausencia de flujos de dinero para el aportante, y no tiene como destino un territorio de baja o nula tributación.",
+      "legal_refs": [
+        "Art. 64, incisos 8° a 13°, CT"
+      ]
+    },
+    "result_procede_tasacion_reorg": {
+      "type": "result",
+      "summary": "Procede la facultad de tasación sobre la reorganización empresarial, porque no se cumplen todos los requisitos de la excepción (falta legítima razón de negocios, se modifica el costo tributario, hay flujos de dinero para el aportante, o el destino es un territorio de baja/nula tributación).",
+      "warnings": [
+        "Revisar con cuidado cada uno de los requisitos copulativos del Art. 64 CT — basta que falle uno solo para que proceda la tasación."
+      ],
+      "next_steps": [
+        "Reunir la documentación que sustente la razón de negocios de la reorganización, por si se puede reconsiderar la calificación",
+        "Evaluar si conviene presentar una consulta previa según el procedimiento del Art. 26 bis CT antes de ejecutar la reorganización"
+      ],
+      "legal_refs": [
+        "Art. 64, incisos 8° a 13°, CT"
+      ]
+    },
+    "result_tasacion_inmediata_giro": {
+      "type": "result",
+      "summary": "Tratándose de bienes raíces, el SII puede tasar el precio o valor y girar de inmediato el impuesto correspondiente, sin necesidad de citación previa.",
+      "details": "Esta es una excepción al procedimiento general: para bienes raíces, el SII no necesita citar primero al contribuyente — puede tasar y girar directamente. La tasación y el giro pueden impugnarse de forma simultánea a través del procedimiento general de reclamaciones (Título II, Libro Tercero CT) — ver el árbol de Recurso de Reposición y Reclamación para los plazos y la vía correspondiente.",
+      "warnings": [
+        "A diferencia del caso general, aquí no hay citación previa — el contribuyente se entera de la tasación junto con el giro ya emitido."
+      ],
+      "next_steps": [
+        "Revisar el giro y la tasación notificados",
+        "Evaluar la reclamación según el árbol de Recurso de Reposición y Reclamación (Art. 120-122 CT)"
+      ],
+      "legal_refs": [
+        "Art. 64, inciso 6°, CT"
+      ]
+    },
+    "result_no_tasacion": {
+      "type": "result",
+      "summary": "El contribuyente acreditó que la operación se realizó a valores normales de mercado — el SII no aplicará la tasación sobre el precio o valor asignado.",
+      "legal_refs": [
+        "Art. 64, incisos 3° y 4°, CT"
+      ]
+    },
+    "result_tasacion_general": {
+      "type": "result",
+      "summary": "El SII determinará fundadamente los valores o precios de mercado y practicará la liquidación de impuestos, o dictará resolución con los ajustes, intereses y multas correspondientes.",
+      "details": "La diferencia entre el precio o valor asignado por el contribuyente y el determinado por el SII (mediante resolución, liquidación, o el propuesto por el contribuyente y aceptado por el Servicio) se afecta, en el ejercicio que corresponda, con el impuesto único del inciso primero del Art. 21 de la LIR. Esta afectación NO se aplica a diferencias que el propio contribuyente haya determinado en una declaración rectificatoria presentada ANTES de un requerimiento del SII sobre la materia, siempre que aumenten su base imponible — en ese caso tributan con las reglas generales del acto, convención u operación.",
+      "next_steps": [
+        "Evaluar si conviene presentar una declaración rectificatoria voluntaria antes de que el SII notifique un requerimiento formal sobre la materia",
+        "Reunir toda la documentación sobre la determinación del precio/valor para la eventual reclamación"
+      ],
+      "legal_refs": [
+        "Art. 64, incisos 4° y 7°, CT",
+        "Art. 21, inciso 1°, LIR (DL-824)"
+      ]
+    }
+  }
+}

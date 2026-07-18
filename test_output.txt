@@ -1,0 +1,3 @@
+Query: Hay algun beneficio de interes para el regimen propyme en la ley
+Results: 1
+  UID: ley_codigo_tributario_art_192 | sim: 0.95

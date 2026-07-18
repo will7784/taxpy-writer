@@ -1,0 +1,146 @@
+{
+  "tree_id": "venta_acciones_derechos_sociales",
+  "title": "Venta de Acciones o Derechos Sociales por Persona Natural",
+  "law": "Ley sobre Impuesto a la Renta (DL-824)",
+  "article": "Art. 17 N° 8 letra a)",
+  "description": "Determina el tratamiento tributario del mayor valor obtenido por una persona natural al vender acciones de sociedades anónimas o en comandita por acciones, o derechos sociales en sociedades de personas.",
+  "tags": [
+    "venta acciones",
+    "derechos sociales",
+    "mayor valor",
+    "enajenacion acciones",
+    "persona natural",
+    "10 uta"
+  ],
+  "root": {
+    "type": "decision",
+    "id": "root",
+    "question": "¿Lo que se vende son acciones de una sociedad anónima o en comandita por acciones, o derechos sociales en una sociedad de personas?",
+    "help": "Este árbol cubre el Art. 17 N° 8 letra a) LIR. Si es la venta de un bien raíz, corresponde el árbol de venta de inmuebles (letra b) en su lugar.",
+    "legal_ref": "Art. 17 N° 8 letra a), encabezado, LIR (DL-824)",
+    "branches": [
+      {
+        "condition": "es_venta_acciones_o_derechos",
+        "next_node": "tipo_resultado"
+      },
+      {
+        "condition": "no_es_este_bien",
+        "next_node": "result_no_aplica"
+      }
+    ]
+  },
+  "nodes": {
+    "tipo_resultado": {
+      "type": "decision",
+      "question": "¿La venta arrojó una ganancia (mayor valor sobre el costo tributario) o una pérdida?",
+      "help": "El costo tributario es el valor de aporte o adquisición de las acciones/derechos, más aumentos y menos disminuciones de capital posteriores, todo reajustado por IPC entre el mes anterior a cada operación y el mes anterior a la venta.",
+      "legal_ref": "Art. 17 N° 8 letra a), numerales i) y ii), LIR",
+      "branches": [
+        {
+          "condition": "hubo_perdida",
+          "next_node": "result_perdida"
+        },
+        {
+          "condition": "hubo_ganancia",
+          "next_node": "tope_10uta"
+        }
+      ]
+    },
+    "tope_10uta": {
+      "type": "decision",
+      "question": "¿El conjunto de resultados del mismo ejercicio por venta de acciones/derechos sociales (letra a), pertenencias mineras/derechos de agua (letra c) y bonos (letra d) supera, en total, 10 Unidades Tributarias Anuales (UTA)?",
+      "help": "Este tope de minimis se calcula sumando los resultados de las letras a), c) y d) del Art. 17 N° 8 en el mismo ejercicio, según el valor de la UTA al cierre del ejercicio en que ocurrió la venta — no es un tope por operación individual.",
+      "legal_ref": "Art. 17 N° 8 letra a), numeral vi), LIR",
+      "branches": [
+        {
+          "condition": "no_supera_10uta",
+          "next_node": "result_no_renta_10uta"
+        },
+        {
+          "condition": "supera_10uta",
+          "next_node": "opcion_reliquidacion"
+        }
+      ]
+    },
+    "opcion_reliquidacion": {
+      "type": "decision",
+      "question": "¿El vendedor prefiere tributar sobre renta percibida en el año de la venta, o prorratear (reliquidar) el mayor valor como renta devengada a lo largo de los años que tuvo las acciones/derechos (hasta un máximo de 10 años)?",
+      "help": "La reliquidación por renta devengada puede convenir si el vendedor tuvo tramos de Global Complementario más bajos en años anteriores — reparte el mayor valor entre esos años en vez de tributarlo todo de una vez al tramo del año de la venta.",
+      "legal_ref": "Art. 17 N° 8 letra a), numeral v), LIR",
+      "branches": [
+        {
+          "condition": "renta_percibida",
+          "next_node": "result_tributacion_normal"
+        },
+        {
+          "condition": "reliquidacion_devengada",
+          "next_node": "result_reliquidacion"
+        }
+      ]
+    },
+    "result_no_aplica": {
+      "type": "result",
+      "summary": "Este árbol no aplica a este bien — revisa si corresponde el árbol de venta de inmuebles (Art. 17 N° 8 letra b) u otro régimen según el tipo de bien vendido.",
+      "legal_refs": [
+        "Art. 17 N° 8, encabezado, LIR (DL-824)"
+      ]
+    },
+    "result_perdida": {
+      "type": "result",
+      "summary": "La pérdida en la venta de acciones/derechos sociales se puede deducir de las ganancias obtenidas en el mismo ejercicio por otras ventas de bienes de las letras a), c) o d) del Art. 17 N° 8 — pero debe acreditarse fehacientemente ante el SII.",
+      "details": "La pérdida se reajusta por IPC entre el mes anterior a la venta que la produjo y el mes anterior al cierre del ejercicio, y se descuenta del mayor valor total determinado en el mismo ejercicio por otras enajenaciones de acciones/derechos sociales, pertenencias mineras/derechos de agua, o bonos.",
+      "warnings": [
+        "Sin acreditación fehaciente ante el Servicio, la pérdida no se puede deducir."
+      ],
+      "next_steps": [
+        "Reunir la documentación que acredite la pérdida (contratos, valorización)",
+        "Verificar si hubo otras ventas de bienes de las letras a), c) o d) en el mismo ejercicio contra las cuales compensar"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra a), numeral iii), LIR (DL-824)"
+      ]
+    },
+    "result_no_renta_10uta": {
+      "type": "result",
+      "summary": "El resultado combinado no supera las 10 UTA, así que se considera ingreso no constitutivo de renta: no se paga impuesto sobre esa ganancia.",
+      "details": "El Art. 17 N° 8 letra a) numeral vi) establece que cuando el conjunto de resultados por venta de acciones/derechos sociales, pertenencias mineras/derechos de agua y bonos, en el mismo ejercicio, no exceda el equivalente a 10 UTA (según su valor al cierre del ejercicio de la venta), el resultado se trata como ingreso no constitutivo de renta.",
+      "warnings": [
+        "Este tope se calcula sumando TODAS las ventas de bienes de las letras a), c) y d) en el mismo ejercicio, no por operación individual — verificar que no haya otras ventas que, sumadas, superen las 10 UTA."
+      ],
+      "next_steps": [
+        "Confirmar que no haya otras ventas de acciones, derechos sociales, pertenencias mineras, derechos de agua o bonos en el mismo ejercicio que, sumadas, superen las 10 UTA"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra a), numeral vi), LIR (DL-824)"
+      ]
+    },
+    "result_tributacion_normal": {
+      "type": "result",
+      "summary": "El mayor valor se grava con los impuestos finales (Global Complementario o Adicional) sobre base percibida, en el año en que se recibió el pago de la venta.",
+      "details": "Al no optar por la reliquidación de renta devengada, el mayor valor tributa completo en el año en que se percibió, con la tasa progresiva del Global Complementario (o Adicional, según domicilio/residencia) que corresponda a ese año.",
+      "next_steps": [
+        "Declarar el mayor valor como renta percibida en el Formulario 22 del año tributario correspondiente a la venta"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra a), numeral iv), LIR (DL-824)"
+      ]
+    },
+    "result_reliquidacion": {
+      "type": "result",
+      "summary": "El mayor valor se reparte entre los años (comerciales) en que el vendedor tuvo las acciones/derechos sociales, hasta un máximo de 10 años, y se reliquida el Global Complementario de cada uno de esos años con esa porción.",
+      "details": "Se divide el mayor valor total reajustado por el número de años de tenencia (máximo 10, las fracciones de año cuentan como año completo). Cada porción anual se convierte a UTM según su valor de diciembre del año de la venta, se ubica en el año en que se devengó, y se reliquida el Global Complementario de ese año con las normas vigentes en ese entonces. Las diferencias de impuesto o devoluciones se expresan en UTM y se pagan/devuelven en el equivalente de diciembre del año de la venta. Esta reliquidación NO modifica las declaraciones de renta ya presentadas de esos años anteriores, solo el cálculo para este mayor valor.",
+      "warnings": [
+        "Esta opción conviene evaluarla comparando la carga tributaria total resultante contra la alternativa de tributar todo en el año de la venta (base percibida) — no siempre es más conveniente."
+      ],
+      "next_steps": [
+        "Determinar los años comerciales de tenencia de las acciones/derechos sociales",
+        "Calcular la porción anual del mayor valor y convertirla a UTM de diciembre del año de la venta",
+        "Reliquidar el Global Complementario de cada año de tenencia con esa porción",
+        "Declarar y pagar el impuesto resultante en el año tributario correspondiente a la venta"
+      ],
+      "legal_refs": [
+        "Art. 17 N° 8 letra a), numeral v), LIR (DL-824)"
+      ]
+    }
+  }
+}

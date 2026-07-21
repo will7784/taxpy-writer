@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import textwrap
 from pathlib import Path
 
 import config
@@ -133,10 +134,17 @@ _SHAPES = {"decision": ("{", "}"), "info": ("(", ")"), "result": ("([", "])")}
 
 def _mermaid_label(node_id: str, node: dict) -> str:
     kind = node.get("type", "info")
-    text = (node.get("question") or node.get("summary") or node_id)[:60]
-    text = text.replace('"', "'").replace("\n", " ")
+    text = (node.get("question") or node.get("summary") or node_id).replace("\n", " ")
+    text = text.replace('"', "'")
+    wrapped = "<br/>".join(textwrap.wrap(text, width=40))
+
+    legal_ref = node.get("legal_ref") or "; ".join(node.get("legal_refs") or [])
+    legal_ref = legal_ref.replace('"', "'")
+    if legal_ref:
+        wrapped += f"<br/><i>({legal_ref})</i>"
+
     opening, closing = _SHAPES.get(kind, ("(", ")"))
-    return f'{node_id}{opening}"{text}"{closing}'
+    return f'{node_id}{opening}"{wrapped}"{closing}'
 
 
 def to_mermaid(tree_json: dict) -> str:

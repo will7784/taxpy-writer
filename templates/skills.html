@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Skills{% endblock %}
+{% block content %}
+<h1>Skills del Agente</h1>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Skills Activos ({{ skills|length }})</h2>
+        {% if skills %}
+        <table class="table">
+            <thead>
+                <tr><th>Skill</th><th>Triggers</th><th>Acciones</th></tr>
+            </thead>
+            <tbody>
+                {% for s in skills %}
+                <tr>
+                    <td>
+                        <strong>{{ s.name }}</strong>
+                        <div class="hint" style="margin:0;">{{ s.description[:100] }}{% if s.description|length > 100 %}...{% endif %}</div>
+                    </td>
+                    <td>
+                        {% for t in s.triggers[:3] %}
+                        <span class="tag tag-primary">{{ t }}</span>
+                        {% endfor %}
+                        {% if s.triggers|length > 3 %}
+                        <span class="tag tag-secondary">+{{ s.triggers|length - 3 }}</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="/skills/{{ s.name }}" class="btn btn-sm btn-outline">Ver</a>
+                        <button onclick="deleteSkill('{{ s.name }}')" class="btn btn-sm btn-outline" style="color:var(--danger);border-color:var(--danger);">Eliminar</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty">No hay skills definidos.</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>Crear Skill desde Plantilla</h2>
+        <form id="create-skill-form" onsubmit="createSkill(event)">
+            <div class="form-group">
+                <label>Nombre del Skill</label>
+                <input type="text" name="name" placeholder="Ej: peticion-sii" required>
+            </div>
+            <div class="form-group">
+                <label>Descripción</label>
+                <input type="text" name="description" placeholder="Que hace este skill y cuando usarlo" required>
+            </div>
+            <div class="form-group">
+                <label>Plantilla (.docx, .txt, .md)</label>
+                <input type="file" name="template_file" accept=".docx,.txt,.md">
+            </div>
+            <button type="submit" class="btn btn-primary">Crear Skill</button>
+        </form>
+        <div id="create-result" style="margin-top:0.5rem;"></div>
+    </div>
+</div>
+
+<script>
+async function createSkill(e) {
+    e.preventDefault();
+    const form = e.target;
+    const data = new FormData(form);
+    const result = document.getElementById('create-result');
+    result.innerHTML = '<span style="color:var(--text-muted);">Creando skill...</span>';
+    try {
+        const resp = await fetch('/api/skills/create', { method: 'POST', body: data });
+        const json = await resp.json();
+        if (json.ok) {
+            result.innerHTML = '<div class="alert alert-success">Skill creado: ' + json.name + '</div>';
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            result.innerHTML = '<div class="alert alert-error">Error: ' + (json.error || 'desconocido') + '</div>';
+        }
+    } catch (err) {
+        result.innerHTML = '<div class="alert alert-error">Error: ' + err.message + '</div>';
+    }
+}
+
+async function deleteSkill(name) {
+    if (!confirm('Eliminar skill "' + name + '"? Esta accion no se puede deshacer.')) return;
+    const resp = await fetch('/api/skills/' + name + '/delete', { method: 'POST' });
+    const json = await resp.json();
+    if (json.ok) location.reload();
+}
+</script>
+{% endblock %}

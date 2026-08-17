@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Skill: {{ skill.name }}{% endblock %}
+{% block content %}
+<h1>{{ skill.name }}</h1>
+<p class="hint">{{ skill.description }}</p>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Informacion</h2>
+        <div class="status-item">
+            <span class="status-label">Cuando usar:</span>
+            <span class="status-value">{{ skill.when_to_use or 'No especificado' }}</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Triggers:</span>
+            <span class="status-value">
+                {% for t in skill.triggers %}
+                <span class="tag tag-primary">{{ t }}</span>
+                {% endfor %}
+            </span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Recursos</h2>
+        <div class="status-item">
+            <span class="status-label">Plantillas:</span>
+            <span class="status-value">{{ skill.templates|length }}</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Ejemplos:</span>
+            <span class="status-value">{{ skill.examples|length }}</span>
+        </div>
+    </div>
+</div>
+
+<div class="card full-width" style="margin-top:1rem;">
+    <h2>Instrucciones</h2>
+    <div style="white-space:pre-wrap;font-size:0.9rem;line-height:1.6;max-height:600px;overflow-y:auto;">
+{{ skill.body }}
+    </div>
+</div>
+
+{% if skill.templates %}
+<div class="card full-width" style="margin-top:1rem;">
+    <h2>Plantillas ({{ skill.templates|length }})</h2>
+    {% for name, content in skill.templates.items() %}
+    <details style="margin-bottom:1rem;">
+        <summary style="cursor:pointer;font-weight:500;padding:0.5rem 0;">{{ name }} ({{ content|length }} caracteres)</summary>
+        <pre style="background:var(--bg);padding:1rem;border-radius:6px;font-size:0.8rem;max-height:400px;overflow:auto;white-space:pre-wrap;">{{ content[:3000] }}{% if content|length > 3000 %}...{% endif %}</pre>
+    </details>
+    {% endfor %}
+</div>
+{% endif %}
+
+{% if skill.examples %}
+<div class="card full-width" style="margin-top:1rem;">
+    <h2>Ejemplos ({{ skill.examples|length }})</h2>
+    {% for name, content in skill.examples.items() %}
+    <details style="margin-bottom:1rem;">
+        <summary style="cursor:pointer;font-weight:500;padding:0.5rem 0;">{{ name }} ({{ content|length }} caracteres)</summary>
+        <pre style="background:var(--bg);padding:1rem;border-radius:6px;font-size:0.8rem;max-height:400px;overflow:auto;white-space:pre-wrap;">{{ content[:3000] }}{% if content|length > 3000 %}...{% endif %}</pre>
+    </details>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div style="margin-top:1rem;">
+    <a href="/skills" class="btn btn-outline">Volver a Skills</a>
+</div>
+{% endblock %}

@@ -26,19 +26,36 @@ import config
 console = Console()
 
 TAVILY_URL = "https://api.tavily.com/search"
-OFFICIAL_DOMAINS = ["bcn.cl", "sii.cl"]
+OFFICIAL_DOMAINS = ["bcn.cl", "sii.cl"]  # fallback; la jurisdiccion activa puede sobreescribir
+
+_COUNTRY_BY_JURISDICTION = {"chile": "chile", "colombia": "colombia"}
+
+
+def _jurisdiction_settings() -> tuple[list[str], str]:
+    """Dominios oficiales y pais segun la jurisdiccion activa (jurisdictions/)."""
+    try:
+        from jurisdictions import get_jurisdiction
+        j = get_jurisdiction()
+        domains = j.official_domains or OFFICIAL_DOMAINS
+        country = _COUNTRY_BY_JURISDICTION.get(j.code, "chile")
+        return domains, country
+    except Exception:
+        return OFFICIAL_DOMAINS, "chile"
 
 
 async def search_live(query: str, *, max_results: int = 5) -> list[dict]:
-    """Busca en fuentes vivas. Prioriza bcn.cl/sii.cl; cae a web general si no hay resultados."""
+    """Busca en fuentes vivas. Prioriza dominios oficiales; cae a web general si no hay resultados."""
     if not config.TAVILY_API_KEY:
         return []
 
+    official_domains, country = _jurisdiction_settings()
     async with httpx.AsyncClient(timeout=15) as client:
-        official = await _tavily_search(client, query, include_domains=OFFICIAL_DOMAINS, max_results=max_results)
+        official = await _tavily_search(
+            client, query, include_domains=official_domains, max_results=max_results, country=country
+        )
         if official:
             return official
-        return await _tavily_search(client, query, include_domains=None, max_results=max_results)
+        return await _tavily_search(client, query, include_domains=None, max_results=max_results, country=country)
 
 
 async def _tavily_search(
@@ -47,12 +64,13 @@ async def _tavily_search(
     *,
     include_domains: list[str] | None,
     max_results: int,
+    country: str = "chile",
 ) -> list[dict]:
     payload: dict = {
         "query": query,
         "search_depth": "basic",
         "max_results": max_results,
-        "country": "chile",
+        "country": country,
         "include_answer": False,
     }
     if include_domains:

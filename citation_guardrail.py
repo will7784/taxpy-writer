@@ -54,7 +54,9 @@ class CitationGuardrail:
         re.compile(r"Art\.?\s+(\d+[°\w]*)\s+de\s+la\s+Ley\s+del\s+IVA", re.IGNORECASE),
         re.compile(r"Art[íi]culo\s+(\d+[°\w]*)\s+del\s+DL[-\s]?(824|825|830)", re.IGNORECASE),
         re.compile(r"Art\.?\s+(\d+[°\w]*)\s+del\s+DL[-\s]?(824|825|830)", re.IGNORECASE),
-        re.compile(r"DL[-\s]?(824|825|830)", re.IGNORECASE),
+        # NOTA: no incluir patrón suelto "DL[-\s]?(824|825|830)": 824/825/830 son
+        # números de decreto, no de artículo, y generaban falsos positivos al
+        # intentar validarse contra los artículos del contexto.
     ]
 
     # Mapeo de nombres de ley a law_tag

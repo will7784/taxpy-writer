@@ -11,6 +11,7 @@ import re
 import sqlite3
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 from typing import Optional
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -27,28 +28,44 @@ from rich.console import Console
 import config
 import exporter
 import live_lookup
-from rag_engine import rag as rag_engine
+import sqlite3
+from datetime import datetime
+from context_rag import build_for_chat, law_loader
 from settings_store import store as settings_store
-from supabase_client import supabase
 from voice_processor import VoiceProcessor
-from citation_guardrail import guardrail_check
 from decision_engine import engine as decision_engine
 from writer import WriterEngine, _load_agent_md
+from cowork_manager import (
+    crear_trabajo, completar_trabajo, list_trabajos, procesar_entrada_cliente,
+    redactar_para_cliente, get_cliente_estado, detectar_tipo_trabajo,
+    escanear_entrada, list_clientes as cowork_list_clientes,
+)
+from obsidian_writer import init_cliente_structure, write_peticion, write_analisis, write_note
+from research_agent import run_research
+from study_agent import run_study
+from ebook_writer import write_ebook
+
+# Supabase es opcional (solo para usage_logs si está configurado)
+try:
+    from supabase_client import supabase
+    _has_supabase = bool(config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY)
+except Exception:
+    supabase = None
+    _has_supabase = False
 
 
 def _log_query(chat_id: int, text: str) -> None:
-    """Registra la consulta real en usage_logs (best-effort, nunca bloquea el chat).
-
-    Base para scripts/eval_graph_lift.py — sin esto no hay forma de medir
-    con evidencia si el grafo de conocimiento aporta sobre consultas reales.
-    Requiere la columna query_text (sql/002_usage_logs_query_text.sql).
-    """
+    """Registra la consulta en SQLite local (best-effort)."""
     try:
-        supabase.table("usage_logs").insert({
-            "telegram_chat_id": chat_id,
-            "query_type": "chat",
-            "query_text": text[:2000],
-        }).execute()
+        db_path = config.TELEGRAM_DB_PATH
+        with sqlite3.connect(str(db_path)) as conn:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS query_log (id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id INTEGER, query_text TEXT, created_at TEXT)",
+            )
+            conn.execute(
+                "INSERT INTO query_log (chat_id, query_text, created_at) VALUES (?, ?, ?)",
+                (chat_id, text[:2000], datetime.utcnow().isoformat()),
+            )
     except Exception:
         pass
 
@@ -153,7 +170,13 @@ class WriterTelegramBot:
             "• Convenio de pago y facilidades (Art. 56, 192)\n\n"
             "*Comandos:*\n"
             "• /fuentes — info de la base de conocimiento\n"
-            "• /voz `on` / `off` — activa respuestas de voz\n\n"
+            "• /voz `on` / `off` — activa respuestas de voz\n"
+            "• /cliente listar — ver clientes\n"
+            "• /cliente crear NOMBRE — crear cliente\n"
+            "• /procesar NOMBRE — procesar docs del cliente\n"
+            "• /redactar CLIENTE TIPO INSTRUCCIONES — redactar documento\n"
+            "• /investigar [CLIENTE] TEXTO — buscar en fuentes oficiales\n"
+            "• /ebook TEMA — generar ebook tributario completo\n\n"
             "Escribe tu consulta directamente y navegaré el árbol de decisión correspondiente 🌳"
         )
         await update.message.reply_text(text, parse_mode="Markdown")
@@ -248,6 +271,400 @@ class WriterTelegramBot:
                 "Usa /voz off para desactivar",
                 parse_mode="Markdown",
             )
+
+    # ── Comandos Co-Work (Fase 4) ─────────────────────────────
+
+    async def _cliente_cmd(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        args = context.args or []
+        subcmd = args[0].lower() if args else "listar"
+
+        if subcmd == "listar":
+            clientes = cowork_list_clientes()
+            if not clientes:
+                await update.message.reply_text("No hay clientes configurados.\nUsa /cliente crear NOMBRE para agregar uno.")
+                return
+            lines = ["*Clientes configurados:*"]
+            for c in clientes:
+                estado = get_cliente_estado(c["nombre"])
+                lines.append(f"\n• *{c['nombre']}*")
+                if c.get("rut"):
+                    lines.append(f"  RUT: {c['rut']}")
+                if c.get("regimen"):
+                    lines.append(f"  Regimen: {c.get('regimen', '')}")
+                lines.append(f"  Trabajos: {estado['trabajos_total']} | Pendientes entrada: {estado['archivos_pendientes_entrada']}")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+        elif subcmd == "crear" and len(args) >= 2:
+            nombre = " ".join(args[1:])
+            try:
+                init_cliente_structure(nombre)
+                await update.message.reply_text(
+                    f"Cliente *{nombre}* creado.\n"
+                    f"Carpeta: `Clientes/{nombre}/`\n\n"
+                    f"Deja documentos en `{nombre}/entrada/` y usa /procesar {nombre} para procesarlos.",
+                    parse_mode="Markdown",
+                )
+            except Exception as e:
+                await update.message.reply_text(f"Error: {e}")
+
+        elif subcmd == "estado" and len(args) >= 2:
+            nombre = " ".join(args[1:])
+            estado = get_cliente_estado(nombre)
+            lines = [
+                f"*Estado de {nombre}*",
+                f"Trabajos totales: {estado['trabajos_total']}",
+                f"  Completados: {estado['trabajos_completados']}",
+                f"  Pendientes: {estado['trabajos_pendientes']}",
+                f"  Errores: {estado['trabajos_error']}",
+                f"Archivos en entrada: {estado['archivos_pendientes_entrada']}",
+            ]
+            if estado["ultimos_trabajos"]:
+                lines.append("\n*Ultimos trabajos:*")
+                for t in estado["ultimos_trabajos"][:5]:
+                    icon = {"completado": "✅", "pendiente": "⏳", "error": "❌"}.get(t["estado"], "•")
+                    lines.append(f"  {icon} {t['titulo'][:60]}")
+            await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+        else:
+            await update.message.reply_text(
+                "*Comandos de cliente:*\n"
+                "/cliente listar — Ver todos los clientes\n"
+                "/cliente crear NOMBRE — Crear nuevo cliente\n"
+                "/cliente estado NOMBRE — Ver estado de trabajos\n"
+                "/procesar NOMBRE — Procesar docs en entrada/\n"
+                "/redactar NOMBRE TIPO — Redactar documento para cliente",
+                parse_mode="Markdown",
+            )
+
+    async def _procesar_cmd(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        args = context.args or []
+        if not args:
+            await update.message.reply_text("Uso: /procesar NOMBRE_CLIENTE")
+            return
+        cliente = " ".join(args)
+        archivos = escanear_entrada(cliente)
+        if not archivos:
+            await update.message.reply_text(f"No hay documentos en `{cliente}/entrada/`.")
+            return
+
+        await update.message.chat.send_action(action="typing")
+        status = await update.message.reply_text(f"Procesando {len(archivos)} documento(s) para *{cliente}*...", parse_mode="Markdown")
+
+        try:
+            trabajos = procesar_entrada_cliente(cliente, llm_client=self.writer._llm)
+        except Exception as e:
+            await status.edit_text(f"Error: {e}")
+            return
+
+        lines = [f"*Procesamiento completado para {cliente}*"]
+        for t in trabajos:
+            icon = {"completado": "✅", "error": "❌"}.get(t.estado, "•")
+            lines.append(f"{icon} {t.tipo}: {t.titulo[:50]}")
+            if t.error_msg:
+                lines.append(f"  _Error: {t.error_msg[:80]}_")
+        await status.edit_text("\n".join(lines), parse_mode="Markdown")
+
+    async def _redactar_cmd(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        args = context.args or []
+        if len(args) < 1:
+            await update.message.reply_text(
+                "Uso: /redactar CLIENTE TIPO INSTRUCCIONES\n"
+                "Ejemplo: /redactar Nano_Calderon peticion Respuesta a observacion G113 por art 17 LIR",
+                parse_mode="Markdown",
+            )
+            return
+
+        cliente = args[0]
+        tipo = args[1] if len(args) > 1 else "peticion"
+        instrucciones = " ".join(args[2:]) if len(args) > 2 else ""
+
+        if not instrucciones:
+            await update.message.reply_text("Escribe las instrucciones despues del tipo.\nEjemplo: /redactar Nano_Calderon peticion Respuesta a observacion G113")
+            return
+
+        await update.message.chat.send_action(action="typing")
+        status = await update.message.reply_text(f"Redactando *{tipo}* para *{cliente}*...", parse_mode="Markdown")
+
+        try:
+            resultado = redactar_para_cliente(
+                cliente=cliente,
+                tipo=tipo,
+                instrucciones=instrucciones,
+                llm_client=self.writer._llm,
+            )
+        except Exception as e:
+            await status.edit_text(f"Error: {e}")
+            return
+
+        if resultado.startswith("[ERROR"):
+            await status.edit_text(f"Error del LLM: {resultado}")
+            return
+
+        t = crear_trabajo(cliente=cliente, tipo=tipo, titulo=instrucciones[:80])
+
+        try:
+            if tipo == "peticion":
+                output_path = write_peticion(cliente, resultado, titulo=instrucciones[:50])
+            elif tipo == "analisis":
+                output_path = write_analisis(cliente, resultado, titulo=instrucciones[:50])
+            else:
+                output_path = write_note(
+                    folder=f"Clientes/{cliente}/Notas",
+                    filename=f"redaccion_{t.id}",
+                    content=resultado,
+                    titulo=instrucciones[:50],
+                    tipo=tipo,
+                    cliente=cliente,
+                )
+            completar_trabajo(t, contenido=resultado[:500], archivo_salida=str(output_path))
+        except Exception:
+            pass
+
+        await status.delete()
+
+        chunks = self.writer.split_for_telegram(resultado[:3800])
+        for chunk in chunks:
+            await update.message.reply_text(chunk)
+
+        md_data = exporter.to_markdown(resultado, f"{tipo}_{cliente}")
+        await update.message.reply_document(
+            document=md_data,
+            filename=f"{tipo}_{cliente}.md",
+            caption=f"Redaccion guardada en vault: {cliente}/{tipo.capitalize()}s/",
+        )
+
+    # ── Comando Ebook (Fase 6) ──────────────────────────────────
+
+    async def _ebook_cmd(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        args = context.args or []
+        if not args:
+            await update.message.reply_text(
+                "*Comando /ebook*\n"
+                "Genera un ebook tributario completo con investigacion, indice, "
+                "capitulos redactados y exportacion a Markdown + DOCX.\n\n"
+                "Uso: /ebook TEMA DEL LIBRO\n\n"
+                "Ejemplos:\n"
+                "/ebook Guia practica del regimen Pro Pyme art 14 D LIR\n"
+                "/ebook Como responder una citacion del SII paso a paso\n"
+                "/ebook Todo sobre la prescripcion tributaria en Chile\n\n"
+                "_El proceso toma unos minutos. El agente genera el indice, "
+                "luego redacta cada capitulo con ejemplos y citas legales._",
+                parse_mode="Markdown",
+            )
+            return
+
+        tema = " ".join(args)
+        chat_id = int(update.effective_chat.id)
+
+        status = await update.message.reply_text(f"📚 Generando ebook: *{tema[:80]}*...\n\n🔍 Fase 1/3: Investigando y creando indice...")
+
+        async def report_progress(current, total, msg):
+            try:
+                pct = f"{current}/{total}" if total > 0 else "..."
+                await status.edit_text(
+                    f"📚 *{tema[:60]}*\n\n"
+                    f"{msg}\n"
+                    f"Progreso: {pct}",
+                    parse_mode="Markdown",
+                )
+            except Exception:
+                pass
+
+        try:
+            result = await write_ebook(
+                tema=tema,
+                llm_client=self.writer._llm,
+                progress_callback=report_progress,
+            )
+        except Exception as e:
+            await status.edit_text(f"Error generando el ebook: {e}")
+            return
+
+        await status.delete()
+
+        md_path = result["archivos"].get("markdown", "")
+        docx_path = result["archivos"].get("docx", "")
+        vault_path = result["archivos"].get("vault", "")
+
+        await update.message.reply_text(
+            f"✅ *Ebook completado: {result['titulo']}*\n"
+            f"📖 {result['capitulos']} capitulos redactados\n\n"
+            f"Formatos disponibles:",
+            parse_mode="Markdown",
+        )
+
+        if md_path:
+            md_file = Path(md_path)
+            if md_file.exists():
+                await update.message.reply_document(
+                    document=open(md_path, "rb"),
+                    filename=md_file.name,
+                    caption=f"📄 {result['titulo']} — Markdown",
+                )
+
+        if docx_path:
+            docx_file = Path(docx_path)
+            if docx_file.exists():
+                await update.message.reply_document(
+                    document=open(docx_path, "rb"),
+                    filename=docx_file.name,
+                    caption=f"📝 {result['titulo']} — Word",
+                )
+
+    # ── Comando Investigar (Fase 5) ────────────────────────────
+
+    async def _investigar_cmd(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        args = context.args or []
+        if not args:
+            await update.message.reply_text(
+                "*Comando /investigar*\n"
+                "Busca jurisprudencia, circulares y doctrina en fuentes oficiales (bcn.cl, sii.cl) "
+                "y guarda los resultados en tu vault de Obsidian.\n\n"
+                "Uso:\n"
+                "/investigar CLIENTE TEXTO — busca para un cliente especifico\n"
+                "/investigar TEXTO — busca en general\n\n"
+                "Ejemplos:\n"
+                "/investigar Nano_Calderon prescripcion art 200 CT\n"
+                "/investigar jurisprudencia art 17 n8 LIR inmuebles\n"
+                "/investigar circulares SII regimen pro pyme 2025",
+                parse_mode="Markdown",
+            )
+            return
+
+        first = args[0]
+        clientes_registrados = [c["nombre"] for c in cowork_list_clientes()]
+        cliente = None
+        query_start = 0
+
+        if first in clientes_registrados:
+            cliente = first
+            query_start = 1
+
+        if query_start >= len(args):
+            await update.message.reply_text("Escribe el texto a investigar despues del nombre del cliente.\nEjemplo: /investigar prescripcion art 200 CT")
+            return
+
+        query = " ".join(args[query_start:])
+        await update.message.chat.send_action(action="typing")
+        status = await update.message.reply_text(f"🔍 Investigando: _{query}_...")
+
+        try:
+            result = await run_research(query, cliente=cliente, max_results=3)
+        except Exception as e:
+            await status.edit_text(f"Error en la investigacion: {e}")
+            return
+
+        await status.delete()
+
+        reply = result.get("reply", "Sin resultados.")
+        await update.message.reply_text(reply, parse_mode="Markdown", disable_web_page_preview=True)
+
+        if result["resultados"] > 0:
+            vault_note = (
+                f"\n_Investigacion guardada en Obsidian:_\n"
+                f"`{result['resumen']}`\n"
+                f"_Archivos: {len(result['archivos'])}_"
+            )
+            await update.message.reply_text(vault_note, parse_mode="Markdown")
+
+    # ── Comando Estudio (modo documento largo) ─────────────────
+
+    async def _estudio_cmd(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        args = context.args or []
+        if not args:
+            await update.message.reply_text(
+                "*Comando /estudio*\n"
+                "Genera un estudio tributario completo y documentado: ley completa + "
+                "jurisprudencia + tus notas del vault + busqueda en vivo. "
+                "El resultado se guarda en Obsidian y se envia como archivo .md.\n\n"
+                "Uso:\n"
+                "/estudio CLIENTE TEMA — estudio para un cliente especifico\n"
+                "/estudio TEMA — estudio general\n\n"
+                "Ejemplos:\n"
+                "/estudio venta de inmuebles persona natural art 17 n 8\n"
+                "/estudio Nano_Calderon prescripcion de impuestos art 200 CT",
+                parse_mode="Markdown",
+            )
+            return
+
+        first = args[0]
+        clientes_registrados = [c["nombre"] for c in cowork_list_clientes()]
+        cliente = None
+        query_start = 0
+        if first in clientes_registrados:
+            cliente = first
+            query_start = 1
+
+        if query_start >= len(args):
+            await update.message.reply_text(
+                "Escribe el tema del estudio despues del nombre del cliente.\n"
+                "Ejemplo: /estudio prescripcion art 200 CT"
+            )
+            return
+
+        topic = " ".join(args[query_start:])
+        await update.message.chat.send_action(action="typing")
+        status = await update.message.reply_text(
+            f"📚 Generando estudio: _{topic}_...\n"
+            "(ley completa + jurisprudencia + notas + web; puede tardar 1-2 min)",
+            parse_mode="Markdown",
+        )
+
+        try:
+            result = await run_study(topic, cliente=cliente, llm_client=self.writer._llm)
+        except Exception as e:
+            console.print(f"[red]Estudio error: {e}[/red]")
+            await _safe_edit(status, f"❌ Error generando el estudio: {e}")
+            return
+
+        await _safe_delete(status)
+
+        # Resumen corto en el chat
+        laws = ", ".join(result.get("laws_loaded", []))
+        docs = len(result.get("docs_usados", []))
+        live_n = len(result.get("live_usado", []))
+        refs = result.get("refs", [])
+        refs_txt = ", ".join(f"Art. {a} {t.upper()}" for t, a in refs[:6])
+        summary = (
+            f"✅ *Estudio listo:* {topic[:80]}\n\n"
+            f"Leyes: {laws or '—'} | Docs del vault: {docs} | Fuentes web: {live_n}\n"
+            + (f"Citas detectadas: {refs_txt}\n" if refs_txt else "")
+            + f"Guardado en Obsidian: `{result['path']}`"
+        )
+        await update.message.reply_text(summary, parse_mode="Markdown")
+
+        # Enviar el .md como documento
+        try:
+            md_path = Path(result["path"])
+            with open(md_path, "rb") as f:
+                await update.message.reply_document(
+                    document=f,
+                    filename=md_path.name,
+                    caption=f"📄 Estudio: {topic[:100]}",
+                )
+        except Exception as e:
+            console.print(f"[yellow]No se pudo enviar el archivo: {e}[/yellow]")
+
+        # Guardar sesion
+        chat_id = int(update.effective_chat.id)
+        self._sessions[chat_id] = {
+            "title": topic,
+            "content": result["content"],
+            "type": "estudio",
+            "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
+        }
 
     # ── Procesamiento Outline (modo índice primero) ───────────
 
@@ -634,86 +1051,43 @@ class WriterTelegramBot:
                 await _safe_edit(status_msg, "🌳 Árbol incompleto. Buscando en fuentes...")
 
             else:
-                await _safe_edit(status_msg, "🔍 No hay árbol para este tema. Buscando en fuentes legales...")
+                await _safe_edit(status_msg, "🔍 No hay árbol para este tema. Cargando leyes completas...")
 
-            # ── PASO 2: Fallback a RAG ─────────────────────────────────────
-            search_results = await rag_engine.search_for_conversation(text)
+            # ── PASO 2: Context-RAG (leyes completas, sin chunking) ────────
+            await _safe_edit(status_msg, "📚 Cargando textos legales completos...")
 
-            # ── PASO 3: Fallback a búsqueda en vivo (live_lookup.py) ────────
-            # Se activa si el RAG interno no encontró nada o su mejor
-            # resultado está bajo el umbral de confianza (config.RAG_CONFIDENCE_THRESHOLD).
-            low_confidence = not search_results or search_results[0].similarity < config.RAG_CONFIDENCE_THRESHOLD
-            live_results: list[dict] = []
-            if low_confidence:
-                await _safe_edit(status_msg, "🌐 Verificando en fuentes oficiales en línea...")
+            system, user_prompt, prompt_input = await build_for_chat(
+                query=text,
+                llm_client=self.writer._llm,
+            )
+
+            tags_loaded = prompt_input.route.law_tags
+            tokens_est = prompt_input.tokens_used or sum(law_loader.get(t).token_estimate for t in tags_loaded if law_loader.get(t))
+            trim_note = " (smart trim)" if prompt_input.trim_applied else ""
+            await _safe_edit(status_msg, f"💬 Analizando con {len(tags_loaded)} leyes (~{tokens_est:,} tokens{trim_note})...")
+
+            # ── PASO 3: Enriquecer con búsqueda en vivo (opcional) ────────
+            live_context = ""
+            if prompt_input.route.needs_live_search:
                 try:
                     live_results = await live_lookup.search_live(text)
+                    live_context = live_lookup.format_for_context(live_results) if live_results else ""
+                    if live_context:
+                        user_prompt = f"{user_prompt}\n\n=== FUENTES EN VIVO (WEB) ===\n{live_context}"
                 except Exception as e:
                     console.print(f"[yellow]⚠️ live_lookup falló: {e}[/yellow]")
 
-            if not search_results and not live_results:
-                await _safe_delete(status_msg)
-                content = (
-                    "💬 No encontré información sobre eso en mi base de conocimiento tributario.\n\n"
-                    "Actualmente tengo árboles de decisión para estos temas del Código Tributario:\n"
-                    "• Citación SII (Art. 63)\n"
-                    "• Liquidación y giro de oficio (Art. 64-65)\n"
-                    "• Determinación de oficio (Art. 59-61)\n"
-                    "• Prescripción (Art. 200-201)\n"
-                    "• Infracciones y sanciones (Art. 97-98)\n"
-                    "• Recurso de reposición (Art. 120-122)\n"
-                    "• Intereses por mora (Art. 53-54)\n"
-                    "• Cobranza y embargo (Art. 172-177)\n"
-                    "• Secreto tributario (Art. 35-37)\n"
-                    "• Convenio de pago (Art. 56, 192)\n\n"
-                    "Prueba con una consulta relacionada con estos temas."
-                )
-                source = "rag_empty"
-            else:
-                context = await rag_engine.build_context(search_results, query=text) if search_results else ""
-                live_context = live_lookup.format_for_context(live_results)
-                await _safe_edit(status_msg, "💬 Analizando fuentes legales...")
-
-                agent_md = _load_agent_md()
-
-                system = (
-                    "Eres ClaudIA, una experta tributaria chilena. Responde en TONO CONVERSACIONAL.\n\n"
-                    "REGLA ABSOLUTA: Cada afirmación DEBE ir acompañada de su cita exacta "
-                    "entre paréntesis: '(Art. XX del [Cuerpo Legal])' para normas, o "
-                    "'(fuente: URL)' si la afirmación viene de una FUENTE WEB EN VIVO. "
-                    "NO inventes artículos. Usa SOLO las fuentes proporcionadas.\n\n"
-                    "NUNCA uses markdown ni bullets. Máximo 250 palabras.\n\n"
-                    "--- PERFIL DEL AGENTE ---\n"
-                    f"{agent_md}\n"
-                    "--- FIN ---"
-                )
-
-                fuentes = context
-                if live_context:
-                    fuentes = f"{context}\n\n{live_context}" if context else live_context
-
-                user_prompt = (
-                    f"Consulta: {text}\n\n"
-                    f"FUENTES (usa SOLO esto):\n{fuentes}\n\n"
-                    "Responde con precisión y cita la norma o la fuente web. Si no está, di que no tienes esa info."
-                )
-
-                content = await self.writer._llm.chat_completion(
-                    messages=[
-                        {"role": "system", "content": system},
-                        {"role": "user", "content": user_prompt},
-                    ],
-                    temperature=0.1,
-                    max_tokens=800,
-                )
-                content = content.strip()
-
-                try:
-                    content = guardrail_check(fuentes, content)
-                except Exception as e:
-                    console.print(f"[yellow]⚠️ Guardrail: {e}[/yellow]")
-
-                source = "rag" if search_results else "live_lookup"
+            content = await self.writer._llm.chat_completion(
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.1,
+                max_tokens=800,
+            )
+            content = content.strip()
+            source = "context_rag"
+            search_results = []
 
             await _safe_delete(status_msg)
 
@@ -726,32 +1100,11 @@ class WriterTelegramBot:
                 "research": content,
                 "voice_enabled": self._sessions.get(chat_id, {}).get("voice_enabled", False),
                 "outline_pending": False,
-                "search_results": [r.chunk.chunk_uid for r in search_results],
+                "laws_loaded": tags_loaded,
             }
 
             # Enviar texto
             await update.message.reply_text(content)
-
-            # PDFs
-            if search_results:
-                pdf_buttons = []
-                seen_pdfs = set()
-                for r in search_results[:3]:
-                    meta = r.chunk.metadata or {}
-                    pdf_url = meta.get("pdf_url", "")
-                    if pdf_url and pdf_url != "N/A" and pdf_url not in seen_pdfs:
-                        seen_pdfs.add(pdf_url)
-                        pdf_buttons.append(
-                            InlineKeyboardButton(
-                                f"📄 {r.chunk.filename[:30]}",
-                                url=pdf_url,
-                            )
-                        )
-                if pdf_buttons:
-                    await update.message.reply_text(
-                        "📎 Fuentes con PDF:",
-                        reply_markup=InlineKeyboardMarkup([pdf_buttons]),
-                    )
 
         except Exception as e:
             console.print(f"[red]Chat error: {e}[/red]")
@@ -936,6 +1289,12 @@ class WriterTelegramBot:
         app.add_handler(CommandHandler("historia", self._historia))
         app.add_handler(CommandHandler("outline", self._outline))
         app.add_handler(CommandHandler("voz", self._voz))
+        app.add_handler(CommandHandler("cliente", self._cliente_cmd))
+        app.add_handler(CommandHandler("procesar", self._procesar_cmd))
+        app.add_handler(CommandHandler("redactar", self._redactar_cmd))
+        app.add_handler(CommandHandler("investigar", self._investigar_cmd))
+        app.add_handler(CommandHandler("estudio", self._estudio_cmd))
+        app.add_handler(CommandHandler("ebook", self._ebook_cmd))
         app.add_handler(CallbackQueryHandler(self._handle_callback))
         app.add_handler(MessageHandler(filters.VOICE, self._handle_voice))
         app.add_handler(

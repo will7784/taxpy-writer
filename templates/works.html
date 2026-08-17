@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Trabajos{% endblock %}
+{% block content %}
+<h1>Trabajos por Cliente</h1>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Clientes</h2>
+        {% if clientes %}
+        <table class="table">
+            <thead>
+                <tr><th>Cliente</th><th>RUT</th><th>Régimen</th><th>Acciones</th></tr>
+            </thead>
+            <tbody>
+                {% for c in clientes %}
+                <tr>
+                    <td><strong>{{ c.nombre }}</strong></td>
+                    <td>{{ c.get('rut', '—') }}</td>
+                    <td><span class="tag tag-primary">{{ c.get('regimen', '—') }}</span></td>
+                    <td>
+                        <a href="/files/{{ c.nombre }}" class="btn btn-sm btn-outline">Archivos</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="empty">No hay clientes configurados.</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>Nuevo Cliente</h2>
+        <form id="create-cliente-form" onsubmit="createCliente(event)">
+            <div class="form-group">
+                <label>Nombre del Cliente</label>
+                <input type="text" name="nombre" placeholder="Ej: Importadora XYZ SpA" required>
+            </div>
+            <div class="form-group">
+                <label>RUT</label>
+                <input type="text" name="rut" placeholder="76.XXX.XXX-X">
+            </div>
+            <div class="form-group">
+                <label>Rubro</label>
+                <input type="text" name="rubro" placeholder="Importación, Servicios, etc.">
+            </div>
+            <div class="form-group">
+                <label>Régimen Tributario</label>
+                <input type="text" name="regimen" placeholder="Art. 14 Letra A / Pro Pyme D / etc.">
+            </div>
+            <div class="form-group">
+                <label>Contacto</label>
+                <input type="text" name="contacto" placeholder="Nombre del contacto">
+            </div>
+            <div class="form-group">
+                <label>Notas</label>
+                <input type="text" name="notas" placeholder="Observaciones, fiscalizaciones abiertas, etc.">
+            </div>
+            <button type="submit" class="btn btn-primary">Crear Cliente</button>
+        </form>
+        <div id="create-result" style="margin-top: 0.5rem;"></div>
+    </div>
+</div>
+
+<script>
+async function createCliente(e) {
+    e.preventDefault();
+    const form = e.target;
+    const data = new FormData(form);
+    const result = document.getElementById('create-result');
+    result.innerHTML = '<span style="color: var(--text-muted);">Creando...</span>';
+    try {
+        const resp = await fetch('/api/cliente/create', { method: 'POST', body: data });
+        const json = await resp.json();
+        if (json.ok) {
+            result.innerHTML = '<div class="alert alert-success">Cliente creado: ' + json.nombre + '</div>';
+            form.reset();
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            result.innerHTML = '<div class="alert alert-error">Error: ' + (json.error || 'desconocido') + '</div>';
+        }
+    } catch (err) {
+        result.innerHTML = '<div class="alert alert-error">Error de conexion: ' + err.message + '</div>';
+    }
+}
+</script>
+{% endblock %}

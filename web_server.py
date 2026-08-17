@@ -14,6 +14,7 @@ import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -25,7 +26,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 import config
 from decision_tree_drafter import DRAFTS_DIR, to_mermaid
+from obsidian_writer import list_clientes, get_cliente_dir, list_cliente_files, init_cliente_structure, VAULT
 from settings_store import store as settings_store
+from skill_manager import list_skills, load_skill, delete_skill, create_skill_from_template, get_skill_templates
 from supabase_client import supabase
 
 # Supabase free tier pausa el proyecto tras ~7 dias sin actividad -- eso
@@ -190,6 +193,7 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
     return templates.TemplateResponse(request, "dashboard.html", {
         "request": request,
         "bot_online": bot_online,
+        "vault_path": str(config.OBSIDIAN_VAULT_PATH),
         "message": message,
         "error": error,
     })
@@ -377,6 +381,252 @@ async def review_draft_discard(request: Request, tree_id: str):
     if path.exists():
         path.unlink()
     return RedirectResponse(url="/review/drafts?message=Borrador+descartado", status_code=status.HTTP_302_FOUND)
+
+
+# ── Gestión de Archivos (Fase 2) ─────────────────────────────
+
+@app.get("/files", response_class=HTMLResponse)
+async def files_home(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    clientes = list_clientes()
+    return templates.TemplateResponse(request, "files.html", {
+        "clientes": clientes,
+        "current_cliente": None,
+        "current_folder": "",
+        "files": [],
+        "subfolders": [],
+    })
+
+
+@app.get("/files/{cliente}", response_class=HTMLResponse)
+async def files_cliente(request: Request, cliente: str, subfolder: str = ""):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    cli_dir = get_cliente_dir(cliente)
+    if not cli_dir.exists():
+        return RedirectResponse(url="/files?error=Cliente+no+encontrado", status_code=status.HTTP_302_FOUND)
+
+    target = cli_dir / subfolder if subfolder else cli_dir
+    subfolders = sorted([d.name for d in target.iterdir() if d.is_dir() and not d.name.startswith(".")])
+    files = sorted([p for p in target.iterdir() if p.is_file() and not p.name.startswith(".")])
+    file_info = [{"name": f.name, "size": f.stat().st_size, "modified": datetime.fromtimestamp(f.stat().st_mtime).strftime("%d/%m/%Y %H:%M")} for f in files]
+
+    breadcrumb = [{"label": "Clientes", "url": "/files"}]
+    path_parts = [cliente]
+    if subfolder:
+        path_parts.extend(subfolder.replace("\\", "/").split("/"))
+    for i, part in enumerate(path_parts):
+        url_path = "/files/" + "/".join(path_parts[:i+1])
+        breadcrumb.append({"label": part, "url": url_path})
+
+    return templates.TemplateResponse(request, "files.html", {
+        "clientes": list_clientes(),
+        "current_cliente": cliente,
+        "current_folder": subfolder,
+        "breadcrumb": breadcrumb,
+        "files": file_info,
+        "subfolders": subfolders,
+    })
+
+
+@app.get("/works", response_class=HTMLResponse)
+async def works(request: Request, cliente: str = ""):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    clientes = list_clientes()
+    selected = None
+    if cliente:
+        for c in clientes:
+            if c.get("nombre", "") == cliente:
+                selected = c
+                break
+    return templates.TemplateResponse(request, "works.html", {
+        "clientes": clientes,
+        "selected_cliente": selected,
+    })
+
+
+@app.post("/api/cliente/create")
+async def api_create_cliente(
+    request: Request,
+    nombre: str = Form(...),
+    rut: str = Form(""),
+    rubro: str = Form(""),
+    regimen: str = Form(""),
+    contacto: str = Form(""),
+    notas: str = Form(""),
+):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        init_cliente_structure(nombre, rut, rubro, regimen, contacto, notas)
+        return JSONResponse({"ok": True, "nombre": nombre})
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+@app.get("/api/cliente/{cliente}/files")
+async def api_cliente_files(request: Request, cliente: str, subfolder: str = ""):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    files = list_cliente_files(cliente, subfolder)
+    return JSONResponse({
+        "cliente": cliente,
+        "folder": subfolder,
+        "files": [{"name": f.name, "size": f.stat().st_size, "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat()} for f in files],
+    })
+
+
+@app.get("/api/vault/status")
+async def api_vault_status(request: Request):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    clientes_count = len(list_clientes())
+    return JSONResponse({
+        "vault_path": str(VAULT),
+        "vault_exists": VAULT.exists(),
+        "clientes": clientes_count,
+    })
+
+
+# ── Gestión de Skills (Fase 3) ────────────────────────────────
+
+@app.get("/skills", response_class=HTMLResponse)
+async def skills_page(request: Request, message: Optional[str] = None, error: Optional[str] = None):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    skills = list_skills()
+    return templates.TemplateResponse(request, "skills.html", {
+        "skills": skills,
+        "message": message,
+        "error": error,
+    })
+
+
+@app.get("/skills/{name}", response_class=HTMLResponse)
+async def skill_detail(request: Request, name: str):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    skill = load_skill(name)
+    if not skill:
+        return RedirectResponse(url="/skills?error=Skill+no+encontrado", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(request, "skill_detail.html", {
+        "skill": skill,
+    })
+
+
+@app.post("/api/skills/create")
+async def api_create_skill(
+    request: Request,
+    name: str = Form(...),
+    description: str = Form(...),
+    template_file: Optional[UploadFile] = None,
+):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        if template_file:
+            import tempfile
+            content = await template_file.read()
+            with tempfile.NamedTemporaryFile(suffix=".docx" if template_file.filename and template_file.filename.endswith(".docx") else ".txt", delete=False) as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            try:
+                create_skill_from_template(name, description, tmp_path)
+            finally:
+                Path(tmp_path).unlink(missing_ok=True)
+        else:
+            from skill_manager import create_skill
+            create_skill(name, description, triggers=[name.replace("-", " ")])
+        return JSONResponse({"ok": True, "name": name})
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+@app.post("/api/skills/{name}/delete")
+async def api_delete_skill(request: Request, name: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    ok = delete_skill(name)
+    return JSONResponse({"ok": ok})
+
+
+# ── Co-Work por Cliente (Fase 4) ───────────────────────────
+
+@app.get("/works/{cliente}", response_class=HTMLResponse)
+async def works_cliente(request: Request, cliente: str):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    from cowork_manager import get_cliente_estado, escanear_entrada
+    estado = get_cliente_estado(cliente)
+    archivos = [{"name": p.name, "size": p.stat().st_size} for p in escanear_entrada(cliente)]
+    return templates.TemplateResponse(request, "works_cliente.html", {
+        "cliente": cliente,
+        "estado": estado,
+        "archivos": archivos,
+    })
+
+
+@app.post("/api/cliente/{cliente}/process")
+async def api_process_cliente(request: Request, cliente: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        from cowork_manager import procesar_entrada_cliente
+        trabajos = procesar_entrada_cliente(cliente)
+        return JSONResponse({
+            "ok": True,
+            "trabajos_creados": len(trabajos),
+            "resultados": [{"tipo": t.tipo, "estado": t.estado, "titulo": t.titulo} for t in trabajos],
+        })
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+# ── Research Agent (Fase 5) ───────────────────────────────────
+
+@app.post("/api/research")
+async def api_research(
+    request: Request,
+    query: str = Form(...),
+    cliente: str = Form(""),
+    max_results: int = Form(3),
+):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        from research_agent import run_research
+        result = await run_research(
+            query=query,
+            cliente=cliente if cliente else None,
+            max_results=max_results,
+        )
+        return JSONResponse(result)
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+# ── Ebook Writer (Fase 6) ─────────────────────────────────────
+
+@app.post("/api/ebook")
+async def api_ebook(request: Request, tema: str = Form(...), audiencia: str = Form("contadores, abogados y empresarios")):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        from ebook_writer import write_ebook
+        result = await write_ebook(tema=tema, audiencia=audiencia)
+        return JSONResponse({"titulo": result["titulo"], "capitulos": result["capitulos"], "archivos": result["archivos"]})
+    except Exception as e:
+        return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+@app.get("/api/skills/{name}/templates")
+async def api_skill_templates(request: Request, name: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    templates = get_skill_templates(name)
+    return JSONResponse({"templates": {k: v[:500] for k, v in templates.items()}})
 
 
 # ── Uvicorn runner ────────────────────────────────────────

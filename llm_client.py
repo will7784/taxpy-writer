@@ -1,50 +1,105 @@
 """
-Cliente LLM dual: OpenAI (GPT-4o) o Google Gemini 1.5 Pro.
+Cliente LLM multi-proveedor: Kimi, Gemini, DeepSeek, OpenAI, o cualquier API OpenAI-compatible.
 
-Si existe GEMINI_API_KEY, usa Gemini por defecto (mayor ventana de contexto,
-mejor para cruzar leyes extensas). Si no, fallback a OpenAI.
+Prioridad:
+  1. Kimi/Moonshot (1M contexto) — ideal para leyes completas y modo estudio
+  2. Gemini (1M contexto) — ideal para leyes completas
+  3. DeepSeek (128K contexto) — barato, OpenAI-compatible
+  4. OpenAI (128K contexto) — fallback clasico
+  5. Custom (configurable) — Qwen, Moonshot, Zhipu, etc.
+
+Cada provider expone su max_context para que el prompt builder ajuste.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 from typing import Any, TypeVar
 
 import config
 from pydantic import BaseModel
 
-# OpenAI
 from openai import AsyncOpenAI
-
-# Gemini
-from google import genai as genai_client
-from google.genai import types as genai_types
 
 T = TypeVar("T", bound=BaseModel)
 
+# Ventanas de contexto por provider (tokens)
+CONTEXT_WINDOWS: dict[str, int] = {
+    "kimi": 1_000_000,
+    "gemini": 900_000,
+    "deepseek": 128_000,
+    "openai": 128_000,
+    "custom": 128_000,
+}
+
 
 class LLMClient:
-    """Wrapper unificado para llamadas a LLM (OpenAI o Gemini)."""
+    """Wrapper unificado para llamadas a LLM."""
 
     def __init__(self) -> None:
         self._provider: str = "openai"
         self._openai: AsyncOpenAI | None = None
-        self._gemini: genai_client.Client | None = None
+        self._gemini: Any = None
+        self._model: str = "gpt-4o"
+        self._max_context: int = 128_000
 
-        # Prioridad: Gemini si hay API key
-        if getattr(config, "GEMINI_API_KEY", None):
+        # Kimi / Moonshot (1M contexto, OpenAI-compatible)
+        if getattr(config, "KIMI_API_KEY", None):
+            self._openai = AsyncOpenAI(
+                api_key=config.KIMI_API_KEY,
+                base_url=getattr(config, "KIMI_BASE_URL", "https://api.moonshot.ai/v1"),
+            )
+            self._provider = "kimi"
+            self._model = getattr(config, "KIMI_MODEL", "kimi-k2-0905-preview")
+            self._max_context = getattr(config, "KIMI_MAX_CONTEXT", 1_000_000)
+        # Gemini (1M contexto)
+        elif getattr(config, "GEMINI_API_KEY", None):
+            from google import genai as genai_client
             self._gemini = genai_client.Client(api_key=config.GEMINI_API_KEY)
             self._provider = "gemini"
+            self._model = "gemini-1.5-pro-latest"
+            self._max_context = 900_000
+        # DeepSeek (OpenAI-compatible)
+        elif getattr(config, "DEEPSEEK_API_KEY", None):
+            self._openai = AsyncOpenAI(
+                api_key=config.DEEPSEEK_API_KEY,
+                base_url="https://api.deepseek.com",
+            )
+            self._provider = "deepseek"
+            self._model = getattr(config, "DEEPSEEK_MODEL", "deepseek-chat")
+            self._max_context = 128_000
+        # OpenAI
         elif config.OPENAI_API_KEY:
             self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
             self._provider = "openai"
+            self._model = config.OPENAI_MODEL
+            self._max_context = 128_000
+        # Custom OpenAI-compatible (Qwen, Moonshot, Zhipu, etc.)
+        elif getattr(config, "CUSTOM_LLM_API_KEY", None) and getattr(config, "CUSTOM_LLM_BASE_URL", None):
+            self._openai = AsyncOpenAI(
+                api_key=config.CUSTOM_LLM_API_KEY,
+                base_url=config.CUSTOM_LLM_BASE_URL,
+            )
+            self._provider = "custom"
+            self._model = getattr(config, "CUSTOM_LLM_MODEL", "default")
+            self._max_context = getattr(config, "CUSTOM_LLM_MAX_CONTEXT", 128_000)
         else:
-            raise RuntimeError("No hay GEMINI_API_KEY ni OPENAI_API_KEY configuradas.")
+            raise RuntimeError(
+                "Configura al menos un proveedor LLM: KIMI_API_KEY, GEMINI_API_KEY, "
+                "DEEPSEEK_API_KEY, OPENAI_API_KEY, o CUSTOM_LLM_API_KEY + CUSTOM_LLM_BASE_URL."
+            )
 
     @property
     def provider(self) -> str:
         return self._provider
+
+    @property
+    def model(self) -> str:
+        return self._model
+
+    @property
+    def max_context(self) -> int:
+        return self._max_context
 
     async def chat_completion(
         self,
@@ -54,12 +109,11 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: int = 2000,
     ) -> str:
-        """Genera una respuesta de chat dada una lista de mensajes OpenAI-style."""
         if self._provider == "gemini" and self._gemini:
             return await self._gemini_chat(model, messages, temperature, max_tokens)
         if self._openai:
             return await self._openai_chat(model, messages, temperature, max_tokens)
-        raise RuntimeError("Ningún proveedor LLM está disponible.")
+        raise RuntimeError("Ningun proveedor LLM esta disponible.")
 
     async def _openai_chat(
         self,
@@ -68,7 +122,7 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
     ) -> str:
-        m = model or config.OPENAI_MODEL
+        m = model or self._model
         response = await self._openai.chat.completions.create(
             model=m,
             messages=messages,  # type: ignore[arg-type]
@@ -79,7 +133,6 @@ class LLMClient:
 
     @staticmethod
     def _split_gemini_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
-        """Separa mensajes estilo OpenAI en (system_instruction, contents) para Gemini."""
         system_instruction = ""
         user_parts: list[str] = []
         for msg in messages:
@@ -100,25 +153,22 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
     ) -> str:
-        m = model or "gemini-1.5-pro-latest"
+        from google.genai import types as genai_types
+        m = model or self._model
         system_instruction, contents = self._split_gemini_messages(messages)
 
-        config_gemini = genai_types.GenerateContentConfig(
+        gen_config = genai_types.GenerateContentConfig(
             system_instruction=system_instruction or None,
             temperature=temperature,
             max_output_tokens=max_tokens,
         )
-
-        # Gemini sync -> async via thread
         response = await asyncio.to_thread(
             self._gemini.models.generate_content,
             model=m,
             contents=contents,
-            config=config_gemini,
+            config=gen_config,
         )
         return response.text or ""
-
-    # ── Salida estructurada (validada contra un schema Pydantic) ────
 
     async def chat_completion_structured(
         self,
@@ -129,19 +179,11 @@ class LLMClient:
         temperature: float = 0.0,
         max_tokens: int = 2000,
     ) -> T:
-        """Genera una respuesta validada contra un schema Pydantic.
-
-        Reemplaza el patrón frágil de parsear JSON "a mano" (strip de
-        fences markdown + json.loads) usado en decision_engine.interpret_query().
-        En OpenAI usa salida estructurada nativa (garantiza JSON válido
-        contra el schema); en Gemini usa modo JSON + validación Pydantic.
-        Lanza ValueError si el LLM no devuelve algo válido contra `schema`.
-        """
         if self._provider == "gemini" and self._gemini:
             return await self._gemini_structured(schema, model, messages, temperature, max_tokens)
         if self._openai:
             return await self._openai_structured(schema, model, messages, temperature, max_tokens)
-        raise RuntimeError("Ningún proveedor LLM está disponible.")
+        raise RuntimeError("Ningun proveedor LLM esta disponible.")
 
     async def _openai_structured(
         self,
@@ -151,7 +193,7 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
     ) -> T:
-        m = model or config.OPENAI_MODEL
+        m = model or self._model
         response = await self._openai.beta.chat.completions.parse(
             model=m,
             messages=messages,  # type: ignore[arg-type]
@@ -161,7 +203,7 @@ class LLMClient:
         )
         parsed = response.choices[0].message.parsed
         if parsed is None:
-            raise ValueError(f"OpenAI no devolvió una salida estructurada válida para {schema.__name__}")
+            raise ValueError(f"No se obtuvo salida estructurada valida para {schema.__name__}")
         return parsed
 
     async def _gemini_structured(
@@ -172,10 +214,11 @@ class LLMClient:
         temperature: float,
         max_tokens: int,
     ) -> T:
-        m = model or "gemini-1.5-pro-latest"
+        from google.genai import types as genai_types
+        m = model or self._model
         system_instruction, contents = self._split_gemini_messages(messages)
 
-        config_gemini = genai_types.GenerateContentConfig(
+        gen_config = genai_types.GenerateContentConfig(
             system_instruction=system_instruction or None,
             temperature=temperature,
             max_output_tokens=max_tokens,
@@ -186,6 +229,6 @@ class LLMClient:
             self._gemini.models.generate_content,
             model=m,
             contents=contents,
-            config=config_gemini,
+            config=gen_config,
         )
         return schema.model_validate_json(response.text)

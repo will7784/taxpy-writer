@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Explorador de Archivos{% endblock %}
+{% block content %}
+<h1>Explorador de Archivos</h1>
+
+<div class="files-breadcrumb">
+    {% for crumb in breadcrumb %}
+        {% if not loop.last %}
+            <a href="{{ crumb.url }}">{{ crumb.label }}</a> <span class="breadcrumb-sep">/</span>
+        {% else %}
+            <strong>{{ crumb.label }}</strong>
+        {% endif %}
+    {% endfor %}
+</div>
+
+{% if not current_cliente %}
+<div class="grid grid-3">
+    {% for c in clientes %}
+    <a href="/files/{{ c.nombre }}" class="card card-link">
+        <div class="card-icon">📁</div>
+        <div class="card-label">{{ c.nombre }}</div>
+        {% if c.rut %}<div class="card-meta">RUT: {{ c.rut }}</div>{% endif %}
+    </a>
+    {% endfor %}
+    {% if not clientes %}
+    <div class="card card-empty">
+        <p class="empty">No hay clientes configurados.</p>
+        <p class="hint">Usa <code>/works</code> para crear uno.</p>
+    </div>
+    {% endif %}
+</div>
+
+{% else %}
+<div class="grid grid-3">
+    {% for folder in subfolders %}
+    <a href="/files/{{ current_cliente }}/{{ folder }}" class="card card-link">
+        <div class="card-icon">📁</div>
+        <div class="card-label">{{ folder }}</div>
+    </a>
+    {% endfor %}
+</div>
+
+{% if files %}
+<div class="card full-width" style="margin-top: 1rem;">
+    <h2>Archivos ({{ files|length }})</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Nombre</th>
+                <th>Tamaño</th>
+                <th>Modificado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for f in files %}
+            <tr>
+                <td>
+                    <span class="file-icon">{% if f.name.endswith('.md') %}📝{% elif f.name.endswith('.yaml') %}⚙️{% elif f.name.endswith('.pdf') %}📄{% elif f.name.endswith('.docx') %}📎{% else %}📃{% endif %}</span>
+                    {{ f.name }}
+                </td>
+                <td>{{ f.size // 1024 }} KB</td>
+                <td>{{ f.modified }}</td>
+                <td>
+                    <span class="tag tag-primary">Vault</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

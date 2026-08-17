@@ -222,3 +222,207 @@ code {
     padding: 0.15rem 0.35rem;
     border-radius: 4px;
 }
+
+/* ── App Layout (Sidebar + Main) ──────────────── */
+.app-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+.sidebar {
+    width: 240px;
+    min-width: 240px;
+    background: var(--card);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 1rem 0;
+}
+
+.sidebar-brand {
+    font-weight: 700;
+    font-size: 1.2rem;
+    padding: 0.5rem 1.2rem 1rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0.5rem;
+}
+
+.sidebar-nav {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0 0.5rem;
+}
+
+.sidebar-section {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 1rem 0.7rem 0.4rem;
+    font-weight: 600;
+}
+
+.sidebar-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.5rem 0.7rem;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: background 0.15s, color 0.15s;
+}
+
+.sidebar-link:hover { background: rgba(59,130,246,0.08); color: var(--text); }
+.sidebar-link.active { background: rgba(59,130,246,0.12); color: var(--primary); font-weight: 500; }
+
+.sidebar-footer {
+    padding: 0.5rem;
+    border-top: 1px solid var(--border);
+}
+
+.main-content {
+    flex: 1;
+    padding: 2rem;
+    overflow-y: auto;
+}
+
+.main-content h1 { font-size: 1.5rem; margin-bottom: 1.25rem; }
+
+@media (max-width: 768px) {
+    .app-layout { flex-direction: column; }
+    .sidebar { width: 100%; min-width: 100%; flex-direction: row; flex-wrap: wrap; padding: 0.5rem; }
+    .sidebar-brand { border-bottom: none; margin-bottom: 0; padding: 0.5rem; }
+    .sidebar-nav { flex-direction: row; flex-wrap: wrap; }
+    .sidebar-section { display: none; }
+    .main-content { padding: 1rem; }
+}
+
+/* ── File Explorer ───────────────────────────── */
+.files-breadcrumb {
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+.files-breadcrumb a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.files-breadcrumb a:hover { text-decoration: underline; }
+
+.breadcrumb-sep {
+    margin: 0 0.4rem;
+    color: var(--border);
+}
+
+.grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+@media (max-width: 900px) {
+    .grid-3 { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 600px) {
+    .grid-3 { grid-template-columns: 1fr; }
+}
+
+.grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+}
+
+@media (max-width: 768px) {
+    .grid-2 { grid-template-columns: 1fr; }
+}
+
+.card-link {
+    display: block;
+    text-decoration: none;
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+
+.card-link:hover {
+    border-color: var(--primary);
+    background: rgba(59,130,246,0.04);
+}
+
+.card-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.card-label {
+    font-weight: 500;
+    font-size: 0.95rem;
+}
+
+.card-meta {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
+.card-empty {
+    text-align: center;
+    padding: 2rem;
+}
+
+.file-icon {
+    margin-right: 0.4rem;
+    font-size: 0.9rem;
+}
+
+/* ── Upload Zone ─────────────────────────────── */
+.upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 3rem 2rem;
+    text-align: center;
+    background: rgba(59,130,246,0.03);
+    transition: border-color 0.2s, background 0.2s;
+    cursor: pointer;
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+    border-color: var(--primary);
+    background: rgba(59,130,246,0.06);
+}
+
+.upload-zone-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.upload-zone p {
+    margin: 0.25rem 0;
+}
+.upload-zone .hint {
+    margin-top: 0.25rem;
+}
+
+.upload-progress {
+    margin-top: 1rem;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    display: none;
+}
+
+.upload-progress.active { display: block; }
+
+.upload-progress-bar {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 3px;
+    transition: width 0.2s;
+    width: 0%;
+}
+
+/* ── Works Panel ─────────────────────────────── */

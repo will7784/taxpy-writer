@@ -14,6 +14,7 @@ from rich.console import Console
 
 import config
 from graph_engine import graph as graph_engine
+from litm import maybe_reorder
 from models import DocumentChunk, SearchResult
 from supabase_client import supabase
 
@@ -688,7 +689,8 @@ class RAGEngine:
                 lines.append(f"• {note}")
             lines.append("")
 
-        for i, r in enumerate(results, 1):
+        ordered_results = maybe_reorder(results)
+        for i, r in enumerate(ordered_results, 1):
             chunk = r.chunk
             meta = chunk.metadata or {}
 

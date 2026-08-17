@@ -1,5 +1,5 @@
 """
-Configuración centralizada — Taxpy RAG (Supabase pgvector + GPT-4o)
+Configuracion centralizada — ImpuestIA (local context-rag)
 """
 
 import os
@@ -17,44 +17,74 @@ BASE_DIR = Path(__file__).parent
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # ============================================
-# OpenAI (escritura + embeddings + voz)
+# OpenAI (escritura + voz)
 # ============================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
-OPENAI_EMBEDDING_MODEL = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
 
-# Google Gemini (alternativa de mayor contexto para cruce de leyes)
+# Google Gemini (recomendado: 1M contexto, leyes completas)
 # =================================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Kimi / Moonshot (1M contexto, leyes completas — recomendado para modo estudio)
+# API OpenAI-compatible: https://platform.moonshot.ai
+# =================================================================
+KIMI_API_KEY = os.getenv("KIMI_API_KEY", "")
+KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
+KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2-0905-preview")
+KIMI_MAX_CONTEXT = int(os.getenv("KIMI_MAX_CONTEXT", "1000000"))
+
+# DeepSeek (128K contexto, ~$0.14/M input tokens, OpenAI-compatible)
+# =================================================================
+DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+
+# Cualquier API OpenAI-compatible (Qwen, Moonshot, Zhipu, etc.)
+# =================================================================
+CUSTOM_LLM_API_KEY = os.getenv("CUSTOM_LLM_API_KEY", "")
+CUSTOM_LLM_BASE_URL = os.getenv("CUSTOM_LLM_BASE_URL", "")
+CUSTOM_LLM_MODEL = os.getenv("CUSTOM_LLM_MODEL", "")
+CUSTOM_LLM_MAX_CONTEXT = int(os.getenv("CUSTOM_LLM_MAX_CONTEXT", "128000"))
+
 # ============================================
-# Supabase (RAG vector database)
+# Supabase (OPCIONAL — solo usage_logs si esta configurado)
 # ============================================
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 # ============================================
-# Capa 3 del router: búsqueda en vivo (live_lookup.py)
+# Jurisdiccion activa (chile | colombia)
 # ============================================
-# Si no se llena, la Capa 3 queda desactivada (no rompe nada, solo no se activa).
+JURISDICCION = os.getenv("JURISDICCION", "chile")
+
+# ============================================
+# Capa 3: busqueda en vivo (live_lookup.py)
+# ============================================
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
-# Umbral de similarity (0-1) bajo el cual se considera que el RAG interno
-# no cubre bien la consulta. Punto de partida razonable; ajustar con
-# ejemplos reales una vez que haya tráfico (ver scripts/eval_graph_lift.py
-# para la misma lógica de "decidir con evidencia, no a ciegas").
-RAG_CONFIDENCE_THRESHOLD = float(os.getenv("RAG_CONFIDENCE_THRESHOLD", "0.72"))
 
 # ============================================
-# NotebookLM (DEPRECATED — se eliminará en Fase 5)
+# DEPRECATED: vars del RAG con chunks
 # ============================================
-NOTEBOOKLM_NOTEBOOK_NAME = os.getenv("NOTEBOOKLM_NOTEBOOK_NAME", "Taxpy Conocimiento")
-NOTEBOOKLM_NOTEBOOK_SECONDARY = os.getenv("NOTEBOOKLM_NOTEBOOK_SECONDARY", "")
+# OPENAI_EMBEDDING_MODEL  — ya no se usa (context-rag no necesita embeddings)
+# RAG_CONFIDENCE_THRESHOLD — ya no se usa (no hay similarity de chunks)
+# NOTEBOOKLM_* — ya no se usa
+NOTEBOOKLM_NOTEBOOK_NAME = os.getenv("NOTEBOOKLM_NOTEBOOK_NAME", "impuestia-default")
 
-_auth_file = BASE_DIR / "notebooklm_auth.json"
-NOTEBOOKLM_AUTH_JSON = os.getenv("NOTEBOOKLM_AUTH_JSON", "").strip()
-if not NOTEBOOKLM_AUTH_JSON and _auth_file.exists():
-    NOTEBOOKLM_AUTH_JSON = _auth_file.read_text(encoding="utf-8").strip()
+# ============================================
+# Mitigacion Lost-in-the-Middle (LitM)
+# Reordena el contexto en forma de U para que lo mas relevante quede en los
+# extremos (primacia/recencia) y no se pierda en el medio del contexto.
+# ============================================
+LITM_REORDER = os.getenv("LITM_REORDER", "1") == "1"
+
+# ============================================
+# Pre-resumir (compresion con LLM intermedio)
+# Cuando el contexto es muy extenso, un paso intermedio destila las leyes a un
+# resumen denso (conservando articulos y cifras exactas) antes del prompt final.
+# ============================================
+PRE_SUMMARIZE = os.getenv("PRE_SUMMARIZE", "1") == "1"
+PRE_SUMMARIZE_MIN_TOKENS = int(os.getenv("PRE_SUMMARIZE_MIN_TOKENS", "60000"))
 
 # ============================================
 # Writer
@@ -65,11 +95,13 @@ WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.2"))
 # ============================================
 # Paths
 # ============================================
-TELEGRAM_DB_PATH = Path(os.getenv("TELEGRAM_DB_PATH", str(BASE_DIR / "taxpy_writer.sqlite3")))
+TELEGRAM_DB_PATH = Path(os.getenv("TELEGRAM_DB_PATH", str(BASE_DIR / "impuestia.sqlite3")))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", str(BASE_DIR / "exports")))
 EXPORTS_DIR.mkdir(exist_ok=True)
 
 DOCUMENTS_DIR = Path(os.getenv("DOCUMENTS_DIR", str(BASE_DIR / "documents")))
+KNOWLEDGE_DIR = Path(os.getenv("KNOWLEDGE_DIR", str(BASE_DIR / "knowledge")))
+KNOWLEDGE_DIR.mkdir(exist_ok=True)
 
 # ============================================
 # Agente de escritura
@@ -80,6 +112,17 @@ AGENT_MD_FILE = BASE_DIR / "agent.md"
 # Railway / Server (healthcheck + frontend)
 # ============================================
 API_SERVER_PORT = int(os.getenv("PORT", os.getenv("API_SERVER_PORT", "8000")))
+
+# ============================================
+# Obsidian Vault Integration
+# ============================================
+OBSIDIAN_VAULT_PATH = Path(os.getenv("OBSIDIAN_VAULT_PATH", r"C:\Users\lyf-a\Dropbox\OBSIDIAN\Impuestia"))
+
+# ============================================
+# Co-Work por Cliente
+# ============================================
+COWORK_PATH = Path(os.getenv("COWORK_PATH", str(OBSIDIAN_VAULT_PATH / "Clientes")))
+COWORK_PATH.mkdir(parents=True, exist_ok=True)
 
 # ============================================
 # Admin panel credentials (fallback seguro)

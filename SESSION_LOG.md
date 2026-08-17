@@ -480,3 +480,94 @@ darlo por terminado.
 - `decision_trees/_drafts/facultad_tasacion.json` (nuevo)
 - `decision_trees/_drafts/termino_de_giro.json` (nuevo)
 - `decision_trees/_drafts/notificaciones_validas.json` (nuevo)
+
+---
+
+# Sesión 2026-08-06 — Modo estudio + Kimi 1M + índice maestro + jurisdicciones
+
+## Contexto
+
+Pivote de arquitectura discutido con el usuario: con LLMs de 1M de tokens de
+contexto (Kimi), el grafo de conocimiento queda mayormente obsoleto y el valor
+pasa a estar en (a) leyes completas en contexto, (b) un índice maestro
+artículo ↔ documentos, (c) árboles de decisión validados (NO son retrieval:
+son razonamiento determinista revisado por el usuario). El proyecto ya había
+pivotado a `context_rag/` (leyes completas + smart trim); esta sesión completa
+esa arquitectura.
+
+## Lo que se hizo hoy
+
+### 1. Fix guardrail (pendiente de 2026-07-12)
+- `citation_guardrail.py`: eliminado el patrón suelto `DL[-\s]?(824|825|830)`
+  que intentaba validar 824/825/830 como números de artículo (falso positivo
+  en cada respuesta que mencionaba un decreto). Verificado con test.
+
+### 2. Provider Kimi (1M contexto)
+- `config.py`: `KIMI_API_KEY`, `KIMI_BASE_URL` (api.moonshot.ai/v1),
+  `KIMI_MODEL` (default kimi-k2-0905-preview), `KIMI_MAX_CONTEXT` (1M).
+- `llm_client.py`: Kimi es el provider de MÁXIMA prioridad si hay key
+  (API OpenAI-compatible). Chain: Kimi > Gemini > DeepSeek > OpenAI > Custom.
+- `main.py`: acepta KIMI_API_KEY como key válida para arrancar.
+- `env.example`: documentado.
+
+### 3. Índice maestro (`article_index.py`, NUEVO)
+- Escanea el vault de Obsidian + `documents/jurisprudencia_sii*` y extrae
+  citas (ley, artículo) de cada .md con regex (citas explícitas con ley +
+  atribución por ley dominante del documento).
+- Persistencia incremental en `knowledge/article_index.json` (por mtime).
+- Búsqueda híbrida: cita exacta de artículo (score alto) + keywords.
+  Números sueltos ("articulo 63" sin ley) matchean en los 3 cuerpos legales.
+- Verificado contra datos reales: 2.926 docs (pronunciamientos SII ya
+  scrapeados), 915 referencias; buscar "prescripcion art 200" trae los
+  pronunciamientos correctos.
+- `scripts/build_article_index.py` (NUEVO): rebuild manual, `--force`,
+  `--sync` (corre sync_sii antes), `--stats`.
+
+### 4. Modo estudio (`study_agent.py` + comando /estudio)
+- Pipeline: router → árbol de decisión validado (si existe, tiene PRIORIDAD
+  como referencia) → leyes completas vía context_rag (~450K tokens las 3
+  leyes, cabe en Kimi 1M) → docs del vault vía article_index (jurisprudencia
+  + notas del usuario) → búsqueda en vivo (si hay TAVILY_API_KEY) →
+  generación larga (8K tokens, temp 0.2, estructura obligatoria de estudio)
+  → guardrail de citas → guardado en vault (Clientes/X/Analisis o Estudios/).
+- Bot: `/estudio [CLIENTE] TEMA` — responde con resumen + archivo .md.
+  Mismo patrón de detección de cliente que /investigar.
+- `telegram_mvp_bot.py`: se agregó `from pathlib import Path` (faltaba y
+  hubiera fallado en runtime al enviar el documento).
+
+### 5. Jurisdicciones (`jurisdictions/`, NUEVO) — replicabilidad a Colombia
+- `base.py`: JurisdictionConfig (law_config, laws_dir, official_domains,
+  currency_units, status).
+- `chile.py`: constantes actuales extraídas (DL-824/825/830, bcn.cl/sii.cl,
+  UF/UTM/UTA).
+- `colombia.py`: stub con TODOs concretos (ET Decreto 624/1989, Consejo de
+  Estado Sección Cuarta, DIAN, UVT) e instrucciones de activación.
+- `law_loader._ensure_loaded` y `live_lookup` consultan la jurisdicción
+  activa (`config.JURISDICCION`, default "chile") con fallback no disruptivo.
+- Colombia: corpus a scrapear después (decisión del usuario).
+
+## Pendientes
+
+1. **Poner KIMI_API_KEY en .env** (y opcionalmente KIMI_MODEL=kimi-k3 si la
+   cuenta tiene acceso) — sin key, sigue funcionando con DeepSeek/OpenAI
+   pero sin la ventaja del millón de tokens.
+2. **TAVILY_API_KEY** sigue pendiente (capa de búsqueda en vivo).
+3. Probar `/estudio` end-to-end en Telegram con una pregunta real y revisar
+   la calidad jurídica del primer estudio generado.
+4. Colombia: scraper del Estatuto Tributario (SUIN-Juriscol / Secretaría
+   del Senado) + DocumentPattern del ET en legal_parser.py.
+5. Grafo de conocimiento: congelado por decisión de arquitectura (contexto
+   largo lo vuelve redundante); eval_graph_lift.py decide su destino final.
+
+## Palabras clave para recordar mañana
+
+> "**estudio**" → probar /estudio en Telegram con KIMI_API_KEY configurada.
+> "**colombia**" → empezar scraper del Estatuto Tributario colombiano.
+
+## Archivos nuevos/modificados clave
+
+- `article_index.py`, `study_agent.py`, `jurisdictions/` (4 archivos),
+  `scripts/build_article_index.py` (nuevos)
+- `llm_client.py`, `config.py`, `main.py`, `live_lookup.py`,
+  `context_rag/law_loader.py`, `citation_guardrail.py`, `env.example`,
+  `telegram_mvp_bot.py` (modificados)

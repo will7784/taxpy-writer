@@ -1,52 +1,30 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Impuestia — Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-    <nav class="navbar">
-        <div class="nav-brand">🤖 Impuestia</div>
-        <div class="nav-links">
-            <a href="/dashboard" class="active">Dashboard</a>
-            <a href="/review/drafts">Árboles</a>
-            <a href="/logout">Salir</a>
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<div class="grid">
+    <div class="card">
+        <h2>Estado del Bot</h2>
+        <div class="status-item">
+            <span class="status-label">Bot Telegram:</span>
+            <span class="status-badge status-{{ 'online' if bot_online else 'offline' }}">
+                {{ 'Online' if bot_online else 'Offline' }}
+            </span>
         </div>
-    </nav>
-
-    <div class="container">
-        {% if message %}
-        <div class="alert alert-success">{{ message }}</div>
-        {% endif %}
-        {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
-        {% endif %}
-
-        <div class="grid">
-            <!-- Estado del bot -->
-            <div class="card">
-                <h2>📊 Estado del Bot</h2>
-                <div class="status-item">
-                    <span class="status-label">Bot Telegram:</span>
-                    <span class="status-badge status-{{ 'online' if bot_online else 'offline' }}">
-                        {{ 'Online' if bot_online else 'Offline' }}
-                    </span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Consultor (árbol → RAG → búsqueda en vivo):</span>
-                    <span class="status-badge status-online">Activo</span>
-                </div>
-            </div>
-
-            <!-- Árboles de decisión -->
-            <div class="card">
-                <h2>🌳 Árboles de Decisión</h2>
-                <p class="hint">Revisa y aprueba los borradores generados por el asistente de árboles.</p>
-                <a href="/review/drafts" class="btn btn-primary">Ver borradores</a>
-            </div>
+        <div class="status-item">
+            <span class="status-label">Consultor (arbol → RAG → busqueda en vivo):</span>
+            <span class="status-badge status-online">Activo</span>
         </div>
     </div>
-</body>
-</html>
+
+    <div class="card">
+        <h2>Vault Obsidian</h2>
+        <div class="status-item">
+            <span class="status-label">Ruta:</span>
+            <span class="status-value" style="font-size:0.8rem;">{{ vault_path or 'C:\\Users\\lyf-a\\Dropbox\\OBSIDIAN\\Impuestia' }}</span>
+        </div>
+        <a href="/files" class="btn btn-outline" style="margin-top:0.5rem;">Explorar archivos</a>
+    </div>
+</div>
+{% endblock %}

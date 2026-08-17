@@ -1,6 +1,6 @@
 """
 Exportador de contenido a archivos descargables.
-Soporta Markdown y DOCX.
+Soporta Markdown (con frontmatter + wikilinks), DOCX, y Obsidian vault.
 """
 
 from __future__ import annotations
@@ -8,15 +8,65 @@ from __future__ import annotations
 import io
 import re
 from datetime import datetime
+from typing import Optional
 
 
-def to_markdown(content: str, title: str) -> bytes:
-    """Genera bytes UTF-8 de un archivo Markdown."""
-    header = f"# {title}\n\n"
-    header += f"_Generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}_\n\n"
-    header += "---\n\n"
-    full = header + content + "\n"
-    return full.encode("utf-8")
+def to_markdown(
+    content: str,
+    title: str,
+    *,
+    frontmatter: Optional[dict] = None,
+    wikilinks: bool = False,
+) -> bytes:
+    """Genera bytes UTF-8 de un archivo Markdown, con frontmatter YAML opcional."""
+    parts = []
+    if frontmatter:
+        parts.append("---")
+        for k, v in frontmatter.items():
+            if isinstance(v, list):
+                parts.append(f"{k}: [{', '.join(str(x) for x in v)}]")
+            else:
+                parts.append(f'{k}: "{v}"')
+        parts.append("---\n")
+
+    parts.append(f"# {title}\n")
+    parts.append(f"_Generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}_\n")
+    parts.append("---\n")
+
+    body = content
+    if wikilinks:
+        body = _convert_to_wikilinks(body)
+
+    parts.append(body)
+    parts.append("")
+    return "\n".join(parts).encode("utf-8")
+
+
+def _convert_to_wikilinks(text: str) -> str:
+    """Convierte referencias a formato [[wikilink]] de Obsidian."""
+    patterns = [
+        (r'Art(?:ículo|\.)\s+(\d+)(?:\s+(?:letra\s+)?([A-H]))?(?:\s+(?:N°|Nº|número|numeral)\s+(\d+))?', _wikilink_art),
+        (r'(DL[- ]824|DL[- ]825|DL[- ]830)', lambda m: f"[[{m.group(0)}]]"),
+        (r'(Ley (?:sobre )?Impuesto a la Renta)', lambda m: f"[[DL-824 — {m.group(0)}]]"),
+        (r'(Código Tributario)', lambda m: f"[[DL-830 — {m.group(0)}]]"),
+    ]
+    result = text
+    for pattern, replacer in patterns:
+        result = re.sub(pattern, replacer, result, flags=re.IGNORECASE)
+    return result
+
+
+def _wikilink_art(match) -> str:
+    """Construye un wikilink para un articulo."""
+    art = match.group(1)
+    letra = match.group(2)
+    numeral = match.group(3)
+    parts = [f"Art. {art}"]
+    if letra:
+        parts.append(f"Letra {letra}")
+    if numeral:
+        parts.append(f"N°{numeral}")
+    return f"[[{' '.join(parts)}]]"
 
 
 def to_docx(content: str, title: str) -> bytes:

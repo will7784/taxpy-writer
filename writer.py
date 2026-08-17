@@ -18,8 +18,7 @@ from rich.console import Console
 
 import config
 from notebooklm_manager import NotebookLMManager
-from rag_engine import rag as rag_engine
-from citation_guardrail import guardrail_check
+from context_rag import build_context, classify_keywords
 from settings_store import store as settings_store
 
 console = Console()
@@ -219,26 +218,20 @@ class WriterEngine:
         return "articulo"
 
     async def research(self, topic: str, content_type: ContentType = "articulo") -> str:
-        """Investiga en RAG Supabase con búsqueda semántica."""
-        console.print(f"  [dim]🔍 Buscando en RAG: {topic}...[/dim]")
+        """Carga leyes completas relevantes al tema usando context-rag."""
+        console.print(f"  [dim]📚 Cargando leyes para: {topic}...[/dim]")
 
         try:
-            # Búsqueda semántica en todas las fuentes relevantes
-            results = await rag_engine.search_for_document(topic, content_type)
-            if not results:
-                console.print("  [yellow]⚠️ No se encontraron fuentes en RAG[/yellow]")
-                return ""
-
-            context = await rag_engine.build_context(results, query=topic)
-            console.print(f"  [dim]✓ {len(results)} fuentes encontradas[/dim]")
-            return context
+            route = classify_keywords(topic)
+            system, user_prompt, prompt_input = build_context(
+                query=topic,
+                route=route,
+            )
+            console.print(f"  [dim]✓ {len(route.law_tags)} leyes cargadas: {', '.join(route.law_tags)}[/dim]")
+            return user_prompt
         except Exception as e:
-            console.print(f"  [yellow]⚠️ RAG research falló: {e}[/yellow]")
-            # Fallback legacy: intentar NotebookLM
-            try:
-                return await self._research_legacy(topic)
-            except Exception:
-                return ""
+            console.print(f"  [yellow]⚠️ Fallo cargando leyes: {e}[/yellow]")
+            return ""
 
     async def generate_outline(
         self,
@@ -388,12 +381,6 @@ class WriterEngine:
             max_tokens=config.WRITER_MAX_TOKENS,
         )
         content = content.strip()
-
-        # Guardrail: verificar citas legales contra el contexto de fuentes
-        try:
-            content = guardrail_check(research_ctx, content)
-        except Exception as e:
-            console.print(f"[yellow]⚠️ Guardrail falló (no crítico): {e}[/yellow]")
 
         return content
 

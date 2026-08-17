@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Trabajo: {{ cliente }}{% endblock %}
+{% block content %}
+<h1>Co-Work: {{ cliente }}</h1>
+
+<div class="files-breadcrumb">
+    <a href="/works">Trabajos</a> <span class="breadcrumb-sep">/</span> <strong>{{ cliente }}</strong>
+</div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <h2>Estado del Co-Work</h2>
+        <div class="status-item">
+            <span class="status-label">Trabajos totales</span>
+            <span class="status-value">{{ estado.trabajos_total }}</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Pendientes</span>
+            <span class="status-value">{{ estado.trabajos_pendientes }}</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Completados</span>
+            <span class="status-value" style="color: var(--success);">{{ estado.trabajos_completados }}</span>
+        </div>
+        <div class="status-item">
+            <span class="status-label">Con error</span>
+            <span class="status-value" style="color: var(--danger);">{{ estado.trabajos_error }}</span>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Bandeja de entrada</h2>
+        {% if archivos %}
+        <table class="table">
+            <thead>
+                <tr><th>Archivo</th><th>Tamaño</th></tr>
+            </thead>
+            <tbody>
+                {% for f in archivos %}
+                <tr>
+                    <td><span class="file-icon">📄</span>{{ f.name }}</td>
+                    <td>{{ (f.size // 1024) }} KB</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <button onclick="processCliente()" id="process-btn" class="btn btn-primary" style="margin-top: 0.75rem;">Procesar entrada</button>
+        {% else %}
+        <p class="empty">No hay archivos pendientes en la carpeta entrada/.</p>
+        {% endif %}
+        <div id="process-result" style="margin-top: 0.5rem;"></div>
+    </div>
+</div>
+
+<div class="card full-width">
+    <h2>Últimos trabajos</h2>
+    {% if estado.ultimos_trabajos %}
+    <table class="table">
+        <thead>
+            <tr><th>Tipo</th><th>Título</th><th>Estado</th><th>Creado</th><th>Completado</th></tr>
+        </thead>
+        <tbody>
+            {% for t in estado.ultimos_trabajos %}
+            <tr>
+                <td>{{ t.tipo }}</td>
+                <td>{{ t.titulo }}</td>
+                <td>
+                    {% if t.estado == 'completado' %}
+                    <span class="tag tag-primary">completado</span>
+                    {% elif t.estado == 'error' %}
+                    <span class="tag" style="background: var(--danger); color: #fff;">error</span>
+                    {% else %}
+                    <span class="tag tag-secondary">{{ t.estado }}</span>
+                    {% endif %}
+                </td>
+                <td>{{ t.creado }}</td>
+                <td>{{ t.completado or '—' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">Aún no hay trabajos registrados para este cliente.</p>
+    {% endif %}
+</div>
+
+<script>
+async function processCliente() {
+    const btn = document.getElementById('process-btn');
+    const result = document.getElementById('process-result');
+    btn.disabled = true;
+    result.innerHTML = '<span style="color: var(--text-muted);">Procesando...</span>';
+    try {
+        const resp = await fetch('/api/cliente/' + encodeURIComponent('{{ cliente }}') + '/process', { method: 'POST' });
+        const json = await resp.json();
+        if (json.ok) {
+            result.innerHTML = '<div class="alert alert-success">Trabajos creados: ' + json.trabajos_creados + '</div>';
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            result.innerHTML = '<div class="alert alert-error">Error: ' + (json.error || 'desconocido') + '</div>';
+        }
+    } catch (err) {
+        result.innerHTML = '<div class="alert alert-error">Error de conexion: ' + err.message + '</div>';
+    } finally {
+        btn.disabled = false;
+    }
+}
+</script>
+{% endblock %}

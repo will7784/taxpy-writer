@@ -11,15 +11,18 @@ Incluye:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import io
 import json
 import logging
+import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, Form, Request, UploadFile, status
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
@@ -488,6 +491,91 @@ async def api_vault_status(request: Request):
         "vault_exists": VAULT.exists(),
         "clientes": clientes_count,
     })
+
+
+# ── Sincronización vault prod → Obsidian local ─────────────────
+#
+# El vault de producción vive en el volumen de Railway y el Obsidian
+# local en Dropbox. Estos endpoints exponen el vault para que un script
+# local (sync_vault.py) lo baje de forma idempotente:
+#   GET /api/vault/manifest  -> lista de archivos + sha256 (sync incremental)
+#   GET /api/vault/export    -> zip del vault + _MANIFEST.json
+# Se excluyen .obsidian/ y .trash/ (config y papeleras son por-máquina).
+
+def _vault_entries(root: Path) -> list[Path]:
+    """Lista archivos del vault excluyendo carpetas por-máquina."""
+    if not root.exists():
+        return []
+    excluded_dirs = {".obsidian", ".trash", ".git"}
+    entries: list[Path] = []
+    for p in sorted(root.rglob("*")):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(root)
+        parts = rel.parts
+        if any(part in excluded_dirs for part in parts):
+            continue
+        if p.name in (".DS_Store", "Thumbs.db"):
+            continue
+        entries.append(p)
+    return entries
+
+
+def _file_sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _build_vault_manifest(root: Path) -> list[dict]:
+    manifest = []
+    for p in _vault_entries(root):
+        rel = p.relative_to(root).as_posix()
+        st = p.stat()
+        manifest.append({
+            "path": rel,
+            "size": st.st_size,
+            "mtime": datetime.fromtimestamp(st.st_mtime).isoformat(timespec="seconds"),
+            "sha256": _file_sha256(p),
+        })
+    return manifest
+
+
+@app.get("/api/vault/manifest")
+async def api_vault_manifest(request: Request):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    return JSONResponse({
+        "vault_path": str(VAULT),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+        "files": _build_vault_manifest(VAULT),
+    })
+
+
+@app.get("/api/vault/export")
+async def api_vault_export(request: Request):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+
+    manifest = _build_vault_manifest(VAULT)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("_MANIFEST.json", json.dumps(
+            {"vault_path": str(VAULT), "generated_at": datetime.now().isoformat(timespec="seconds"), "files": manifest},
+            ensure_ascii=False, indent=2,
+        ))
+        for entry in manifest:
+            zf.write(VAULT / entry["path"], arcname=entry["path"])
+
+    data = buf.getvalue()
+    filename = f"vault-export-{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 # ── Gestión de Skills (Fase 3) ────────────────────────────────

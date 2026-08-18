@@ -130,3 +130,10 @@ COWORK_PATH.mkdir(parents=True, exist_ok=True)
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "will")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "anwi7784")
 SESSION_SECRET = os.getenv("SESSION_SECRET", "impuestia-secret-change-me")
+
+# ============================================
+# Sync vault producción → Obsidian local
+# ============================================
+# URL del panel de producción desde donde sync_vault.py descarga el vault.
+SYNC_PROD_URL = os.getenv("SYNC_PROD_URL", "https://taxpy-writer-production.up.railway.app")
+SYNC_STATE_PATH = Path(os.getenv("SYNC_STATE_PATH", str(BASE_DIR / "sync_state.json")))

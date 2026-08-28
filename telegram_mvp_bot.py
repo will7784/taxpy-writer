@@ -1296,8 +1296,6 @@ class WriterTelegramBot:
 
     def run(self) -> None:
         app = Application.builder().token(self.token).build()
-        # Ignorar updates pendientes al reiniciar (evita Conflict con instancias viejas)
-        app.drop_pending_updates = True
 
         app.add_handler(CommandHandler("start", self._start))
         app.add_handler(CommandHandler("fuentes", self._notebook))
@@ -1322,7 +1320,12 @@ class WriterTelegramBot:
         voice_status = "🎙️ voz" if self.voice else "📝 solo texto"
         console.print(
             "[green]✅ Taxpy RAG Bot iniciado[/green]\n"
-            f"[dim]RAG: Supabase pgvector[/dim]\n"
-            f"[dim]LLM: {config.OPENAI_MODEL} | {voice_status}[/dim]"
+            f"[dim]Motor: context_rag + notas aprobadas + arboles[/dim]\n"
+            f"[dim]LLM: {self.writer._llm.provider} | {voice_status}[/dim]"
         )
-        app.run_polling(allowed_updates=Update.ALL_TYPES, stop_signals=())
+        # Ignorar updates pendientes al reiniciar (evita Conflict con instancias viejas)
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+            stop_signals=(),
+        )

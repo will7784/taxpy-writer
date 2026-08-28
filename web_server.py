@@ -28,7 +28,10 @@ from starlette.middleware.sessions import SessionMiddleware
 import config
 from article_index import article_index
 from decision_tree_drafter import DRAFTS_DIR, to_mermaid
-from obsidian_writer import list_clientes, get_cliente_dir, list_cliente_files, init_cliente_structure, VAULT
+from obsidian_writer import (
+    list_clientes, get_cliente_dir, list_cliente_files, init_cliente_structure,
+    write_note, VAULT,
+)
 from settings_store import store as settings_store
 from skill_manager import list_skills, load_skill, delete_skill, create_skill_from_template, get_skill_templates
 
@@ -362,14 +365,25 @@ async def review_draft_discard(request: Request, tree_id: str):
 # "Aprobar" solo edita el frontmatter de la nota en el vault (aprobada: true).
 # El borrado/aprobación nunca toca el contenido del cuerpo.
 
+def _vault_rel(doc_path: str) -> Optional[str]:
+    """Ruta relativa al vault, o None si el doc esta fuera (no es aprobable)."""
+    try:
+        rel = Path(doc_path).resolve().relative_to(VAULT.resolve())
+    except ValueError:
+        return None
+    return rel.as_posix()
+
+
 def _list_pending_aprobadas() -> list[dict]:
-    import os
     items = []
-    for doc in article_index.pending_approval(max_docs=200):
+    for doc in article_index.pending_approval(max_docs=300):
+        rel = _vault_rel(doc.path)
+        if rel is None:
+            continue  # fuera del vault (p.ej. documents/): no es aprobable
         refs_txt = ", ".join(f"{t}:{a}" for t, a in doc.refs[:4])
         items.append({
             "path": doc.path,
-            "rel_path": os.path.relpath(doc.path, str(VAULT)).replace("\\", "/"),
+            "rel_path": rel,
             "title": doc.title,
             "tipo": doc.tipo or "nota",
             "cliente": doc.cliente or "",
@@ -438,6 +452,91 @@ async def review_nota_unapprove(request: Request, rel_path: str):
         url=f"/review/notas?message={'Nota+desaprobada' if ok else 'No+se+pudo+desmarcar'}",
         status_code=status.HTTP_302_FOUND,
     )
+
+
+# ── Subida de material para revisar (Fase 7b) ──────────────────────────
+#
+# Acepta .txt/.md/.docx/.pdf (con texto o escaneado) e imagenes (png/jpg/...).
+# Los PDF escaneados y las imagenes se procesan con OCR de vision (GPT-4o,
+# ver ocr_processor.py). El resultado se guarda en el vault como nota pendiente
+# de aprobacion (carpeta Entrada/), listo para revisar y aprobar aqui mismo.
+
+_UPLOAD_TYPES = {"jurisprudencia", "peticion", "analisis", "estudio", "nota"}
+
+
+@app.post("/review/notas/upload")
+async def review_nota_upload(
+    request: Request,
+    material: UploadFile,
+    titulo: str = Form(""),
+    tipo: str = Form("nota"),
+    cliente: str = Form(""),
+):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+    filename = material.filename or "documento"
+    ext = Path(filename).suffix.lower().lstrip(".")
+    if ext not in {"txt", "md", "docx", "pdf", "png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"}:
+        return RedirectResponse(
+            url="/review/notas?error=Formato+no+soportado:+usar+pdf/docx/txt/md/imagen",
+            status_code=status.HTTP_302_FOUND,
+        )
+    if tipo not in _UPLOAD_TYPES:
+        tipo = "nota"
+
+    data = await material.read()
+    if not data:
+        return RedirectResponse(url="/review/notas?error=Archivo+vacio", status_code=status.HTTP_302_FOUND)
+
+    import tempfile
+    tmp = Path(tempfile.mkdtemp()) / f"upload.{ext}"
+    tmp.write_bytes(data)
+    try:
+        from ocr_processor import extract_markdown
+        markdown, meta = await extract_markdown(tmp)
+    except Exception as e:
+        logger.exception("Fallo procesamiento de material")
+        return RedirectResponse(
+            url=f"/review/notas?error=No+se+pudo+procesar+el+archivo:+{str(e)[:120]}",
+            status_code=status.HTTP_302_FOUND,
+        )
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+            tmp.parent.rmdir()
+        except OSError:
+            pass
+
+    if not markdown.strip():
+        return RedirectResponse(
+            url="/review/notas?error=No+se+extrajo+texto+del+archivo+(¿escaneo+muy+pobre?)",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    body = (
+        f"## Material original\n\n"
+        f"- **Archivo:** `{filename}` ({meta['tipo_src']}, "
+        f"{len(data) // 1024} KB)\n"
+        f"- **Procesado:** {datetime.now().strftime('%d/%m/%Y %H:%M')}\n"
+        f"- **Paginas:** {meta['pages']} | **OCR:** {'si' if meta['ocr'] else 'no (texto nativo)'}\n\n"
+        f"## Contenido extraido\n\n{markdown}"
+    )
+    safe_title = titulo or Path(filename).stem
+    path = write_note(
+        folder="Entrada",
+        filename=safe_title[:80],
+        content=body,
+        title=safe_title,
+        tipo=tipo,
+        cliente=cliente or None,
+        tags=["material"],
+        fuentes=[filename],
+    )
+    article_index.rebuild()
+
+    msg = "Material+subido:+rev%C3%ADsalo+y+aprueba"
+    return RedirectResponse(url=f"/review/notas?message={msg}", status_code=status.HTTP_302_FOUND)
 
 
 # ── Gestión de Archivos (Fase 2) ─────────────────────────────

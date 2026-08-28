@@ -11,6 +11,43 @@
 {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 
 <div class="card full-width">
+    <h2>📤 Subir material a revisión</h2>
+    <p class="hint">
+        Formatos: <code>.txt .md .docx .pdf .png .jpg</code>. Los PDF escaneados y las
+        imágenes se procesan con <strong>OCR de visión (GPT-4o)</strong>. El resultado se
+        guarda como nota pendiente en <code>Entrada/</code> del vault — aprueba solo lo que valides.
+    </p>
+    <form id="upload-form" onsubmit="uploadMaterial(event)" enctype="multipart/form-data">
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label>Archivo</label>
+                <input type="file" name="material" accept=".txt,.md,.docx,.pdf,.png,.jpg,.jpeg,.webp,.tiff,.bmp" required>
+            </div>
+            <div class="form-group">
+                <label>Título (opcional)</label>
+                <input type="text" name="titulo" placeholder="Por defecto, el nombre del archivo">
+            </div>
+            <div class="form-group">
+                <label>Tipo</label>
+                <select name="tipo">
+                    <option value="jurisprudencia">Jurisprudencia / oficio / circular</option>
+                    <option value="analisis">Análisis</option>
+                    <option value="peticion">Petición</option>
+                    <option value="estudio">Estudio</option>
+                    <option value="nota" selected>Nota / otro</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Cliente (opcional)</label>
+                <input type="text" name="cliente" placeholder="Ej: Nano_Calderon">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:auto;">Subir y procesar</button>
+        <div id="upload-status" style="margin-top:0.5rem;"></div>
+    </form>
+</div>
+
+<div class="card full-width">
     <h2>Pendientes de aprobación ({{ pendientes|length }})</h2>
     {% if pendientes %}
     <table class="table">
@@ -27,13 +64,13 @@
         <tbody>
             {% for n in pendientes %}
             <tr>
-                <td><a href="/review/notas/{{ n.rel_path }}">{{ n.title }}</a></td>
+                <td><a href="/review/notas/{{ n.rel_path | urlencode }}">{{ n.title }}</a></td>
                 <td>{{ n.tipo }}</td>
                 <td>{{ n.cliente or "—" }}</td>
                 <td>{{ n.refs or "—" }}</td>
                 <td>{{ n.mtime }}</td>
                 <td>
-                    <form method="post" action="/review/notas/{{ n.rel_path }}/approve" style="display:inline">
+                    <form method="post" action="/review/notas/{{ n.rel_path | urlencode }}/approve" style="display:inline">
                         <button type="submit" class="btn btn-sm btn-primary">Aprobar</button>
                     </form>
                 </td>
@@ -45,4 +82,21 @@
     <p class="empty">No hay notas pendientes de aprobación.</p>
     {% endif %}
 </div>
+
+<script>
+async function uploadMaterial(e) {
+    e.preventDefault();
+    const form = e.target;
+    const status = document.getElementById('upload-status');
+    status.innerHTML = '<span style="color:var(--text-muted);">Procesando… (el OCR de escaneos puede tardar 1-2 min)</span>';
+    try {
+        const resp = await fetch('/review/notas/upload', { method: 'POST', body: new FormData(form) });
+        if (resp.redirected) { window.location.href = resp.url; return; }
+        const html = await resp.text();
+        status.innerHTML = '<div class="alert alert-error">Respuesta inesperada del servidor.</div>';
+    } catch (err) {
+        status.innerHTML = '<div class="alert alert-error">Error: ' + err.message + '</div>';
+    }
+}
+</script>
 {% endblock %}

@@ -7,10 +7,10 @@
 
 <div class="card full-width">
     <div style="display:flex;gap:0.5rem;margin-bottom:1rem;">
-        <form method="post" action="/review/notas/{{ rel_path }}/approve" style="display:inline">
+        <form method="post" action="/review/notas/{{ rel_path | urlencode }}/approve" style="display:inline">
             <button type="submit" class="btn btn-primary">✅ Aprobar</button>
         </form>
-        <form method="post" action="/review/notas/{{ rel_path }}/unapprove" style="display:inline">
+        <form method="post" action="/review/notas/{{ rel_path | urlencode }}/unapprove" style="display:inline">
             <button type="submit" class="btn btn-outline">↩️ Desaprobar</button>
         </form>
         <a href="/review/notas" class="btn btn-outline">Volver</a>

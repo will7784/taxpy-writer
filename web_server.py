@@ -10,13 +10,11 @@ Incluye:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import io
 import json
 import logging
 import zipfile
-from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -28,17 +26,11 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import config
+from article_index import article_index
 from decision_tree_drafter import DRAFTS_DIR, to_mermaid
 from obsidian_writer import list_clientes, get_cliente_dir, list_cliente_files, init_cliente_structure, VAULT
 from settings_store import store as settings_store
 from skill_manager import list_skills, load_skill, delete_skill, create_skill_from_template, get_skill_templates
-from supabase_client import supabase
-
-# Supabase free tier pausa el proyecto tras ~7 dias sin actividad -- eso
-# dejo al RAG respondiendo "no encontro informacion" en produccion sin
-# ningun aviso. Este ping evita llegar a ese limite mientras el bot este
-# corriendo (Railway lo mantiene arriba 24/7). Bastante margen bajo 7 dias.
-SUPABASE_KEEPALIVE_INTERVAL_SECONDS = 24 * 60 * 60  # 24 horas
 
 TREES_DIR = config.BASE_DIR / "decision_trees" / "codigo_tributario"
 
@@ -97,29 +89,7 @@ async def _list_notebooks_from_api() -> list[dict]:
 
 # ── FastAPI App ───────────────────────────────────────────
 
-async def _supabase_keepalive_loop() -> None:
-    """Pinguea Supabase periodicamente para que el plan free no lo pause por inactividad."""
-    while True:
-        try:
-            await asyncio.to_thread(
-                lambda: supabase.table("document_chunks").select("chunk_uid").limit(1).execute()
-            )
-            logger.info("Supabase keepalive: OK")
-        except Exception as e:
-            logger.warning("Supabase keepalive fallo (se reintenta en el proximo ciclo): %s", e)
-        await asyncio.sleep(SUPABASE_KEEPALIVE_INTERVAL_SECONDS)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Impuestia Admin starting up...")
-    keepalive_task = asyncio.create_task(_supabase_keepalive_loop())
-    yield
-    keepalive_task.cancel()
-    logger.info("Impuestia Admin shutting down...")
-
-
-app = FastAPI(title="Impuestia Admin", lifespan=lifespan)
+app = FastAPI(title="Impuestia Admin")
 
 
 @app.exception_handler(Exception)
@@ -189,8 +159,6 @@ async def dashboard(request: Request, message: Optional[str] = None, error: Opti
         return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
 
     # Bot siempre "online" mientras este servidor corre (son el mismo proceso).
-    # NotebookLM ya no se consulta acá -- es funcionalidad deprecada
-    # (config.py: "se eliminará"), el consultor usa RAG/Supabase directo.
     bot_online = True
 
     return templates.TemplateResponse(request, "dashboard.html", {
@@ -384,6 +352,92 @@ async def review_draft_discard(request: Request, tree_id: str):
     if path.exists():
         path.unlink()
     return RedirectResponse(url="/review/drafts?message=Borrador+descartado", status_code=status.HTTP_302_FOUND)
+
+
+# ── Revisión de Notas Aprobadas (Fase 7) ─────────────────────────────
+#
+# Concepto: el usuario valida contenido (jurisprudencia, peticiones,
+# estudios, criterios propios) y lo marca como NOTA APROBADA. A partir de
+# ahí, el bot lo consulta con prioridad ANTES de recurrir a la búsqueda web.
+# "Aprobar" solo edita el frontmatter de la nota en el vault (aprobada: true).
+# El borrado/aprobación nunca toca el contenido del cuerpo.
+
+def _list_pending_aprobadas() -> list[dict]:
+    import os
+    items = []
+    for doc in article_index.pending_approval(max_docs=200):
+        refs_txt = ", ".join(f"{t}:{a}" for t, a in doc.refs[:4])
+        items.append({
+            "path": doc.path,
+            "rel_path": os.path.relpath(doc.path, str(VAULT)).replace("\\", "/"),
+            "title": doc.title,
+            "tipo": doc.tipo or "nota",
+            "cliente": doc.cliente or "",
+            "refs": refs_txt,
+            "mtime": datetime.fromtimestamp(doc.mtime).strftime("%d/%m/%Y %H:%M"),
+            "size": Path(doc.path).stat().st_size if Path(doc.path).exists() else 0,
+        })
+    return items
+
+
+@app.get("/review/notas", response_class=HTMLResponse)
+async def review_notas(request: Request, message: Optional[str] = None, error: Optional[str] = None):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    article_index.rebuild()
+    return templates.TemplateResponse(request, "review_notas.html", {
+        "pendientes": _list_pending_aprobadas(),
+        "aprobadas": 0,
+        "message": message,
+        "error": error,
+    })
+
+
+@app.get("/review/notas/{rel_path:path}", response_class=HTMLResponse)
+async def review_nota_detail(request: Request, rel_path: str, error: Optional[str] = None):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    path = (VAULT / rel_path).resolve()
+    if not path.exists() or str(VAULT.resolve()) not in str(path):
+        return RedirectResponse(url="/review/notas?error=Nota+no+encontrada", status_code=status.HTTP_302_FOUND)
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as e:
+        return RedirectResponse(url=f"/review/notas?error=No+se+pudo+leer:+{str(e)[:80]}", status_code=status.HTTP_302_FOUND)
+    return templates.TemplateResponse(request, "review_nota_detail.html", {
+        "rel_path": rel_path,
+        "path": str(path),
+        "content": content,
+        "error": error,
+    })
+
+
+@app.post("/review/notas/{rel_path:path}/approve")
+async def review_nota_approve(request: Request, rel_path: str):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    path = (VAULT / rel_path).resolve()
+    if not path.exists():
+        return RedirectResponse(url="/review/notas?error=Nota+no+encontrada", status_code=status.HTTP_302_FOUND)
+    ok = article_index.set_aprobada(str(path), True)
+    return RedirectResponse(
+        url=f"/review/notas?message={'Nota+aprobada' if ok else 'No+se+pudo+marcar+la+nota'}",
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@app.post("/review/notas/{rel_path:path}/unapprove")
+async def review_nota_unapprove(request: Request, rel_path: str):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    path = (VAULT / rel_path).resolve()
+    if not path.exists():
+        return RedirectResponse(url="/review/notas?error=Nota+no+encontrada", status_code=status.HTTP_302_FOUND)
+    ok = article_index.set_aprobada(str(path), False)
+    return RedirectResponse(
+        url=f"/review/notas?message={'Nota+desaprobada' if ok else 'No+se+pudo+desmarcar'}",
+        status_code=status.HTTP_302_FOUND,
+    )
 
 
 # ── Gestión de Archivos (Fase 2) ─────────────────────────────

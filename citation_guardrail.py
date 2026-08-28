@@ -54,6 +54,9 @@ class CitationGuardrail:
         re.compile(r"Art\.?\s+(\d+[°\w]*)\s+de\s+la\s+Ley\s+del\s+IVA", re.IGNORECASE),
         re.compile(r"Art[íi]culo\s+(\d+[°\w]*)\s+del\s+DL[-\s]?(824|825|830)", re.IGNORECASE),
         re.compile(r"Art\.?\s+(\d+[°\w]*)\s+del\s+DL[-\s]?(824|825|830)", re.IGNORECASE),
+        # Citas con numeral: "Art. 17 N° 8" / "Art. 17 N 8 de la Ley ..."
+        re.compile(r"Art\.?\s+(\d+[°\w]*)\s+(?:N\s*[°º]\s*)?(\d+[°\w]*)\s+(?:de\s+la\s+)?(?:Ley\s+(?:sobre\s+)?(?:Impuesto\s+a\s+la\s+)?(?:Renta|del\s+IVA|C[oó]digo\s+Tributario))", re.IGNORECASE),
+        re.compile(r"Art[íi]culo\s+(\d+[°\w]*)\s+(?:N\s*[°º]\s*)?(\d+[°\w]*)\s+(?:de\s+la\s+)?(?:Ley\s+(?:sobre\s+)?(?:Impuesto\s+a\s+la\s+)?(?:Renta|del\s+IVA|C[oó]digo\s+Tributario))", re.IGNORECASE),
         # NOTA: no incluir patrón suelto "DL[-\s]?(824|825|830)": 824/825/830 son
         # números de decreto, no de artículo, y generaban falsos positivos al
         # intentar validarse contra los artículos del contexto.

@@ -10,7 +10,7 @@ Uso:
 Este script solo escribe los .md nuevos en documents/jurisprudencia_sii/ y
 documents/jurisprudencia_sii_circulares/. Para subirlos a Supabase (embeddings
 + dedupe por content_hash), correr después:
-    python scripts/ingest_cli.py --jurisprudencia --circulares
+    python sync_sii.py (descarga jurisprudencia y circulares del SII)
 """
 
 from __future__ import annotations

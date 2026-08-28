@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Notas aprobadas{% endblock %}
+{% block content %}
+<h1>📝 Notas aprobadas</h1>
+<p class="hint">
+    Contenido del vault que puedes marcar como <strong>aprobado</strong>. Al aprobar,
+    el bot lo consulta con prioridad antes de buscar en la web. Solo se edita el frontmatter
+    (<code>aprobada: true</code>), nunca el cuerpo de la nota.
+</p>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+<div class="card full-width">
+    <h2>Pendientes de aprobación ({{ pendientes|length }})</h2>
+    {% if pendientes %}
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Título</th>
+                <th>Tipo</th>
+                <th>Cliente</th>
+                <th>Artículos</th>
+                <th>Modificado</th>
+                <th>Acciones</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for n in pendientes %}
+            <tr>
+                <td><a href="/review/notas/{{ n.rel_path }}">{{ n.title }}</a></td>
+                <td>{{ n.tipo }}</td>
+                <td>{{ n.cliente or "—" }}</td>
+                <td>{{ n.refs or "—" }}</td>
+                <td>{{ n.mtime }}</td>
+                <td>
+                    <form method="post" action="/review/notas/{{ n.rel_path }}/approve" style="display:inline">
+                        <button type="submit" class="btn btn-sm btn-primary">Aprobar</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="empty">No hay notas pendientes de aprobación.</p>
+    {% endif %}
+</div>
+{% endblock %}

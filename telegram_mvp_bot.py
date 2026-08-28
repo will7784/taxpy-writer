@@ -31,6 +31,8 @@ import live_lookup
 import sqlite3
 from datetime import datetime
 from context_rag import build_for_chat, law_loader
+from article_index import article_index
+from citation_guardrail import guardrail_check
 from settings_store import store as settings_store
 from voice_processor import VoiceProcessor
 from decision_engine import engine as decision_engine
@@ -44,14 +46,6 @@ from obsidian_writer import init_cliente_structure, write_peticion, write_analis
 from research_agent import run_research
 from study_agent import run_study
 from ebook_writer import write_ebook
-
-# Supabase es opcional (solo para usage_logs si está configurado)
-try:
-    from supabase_client import supabase
-    _has_supabase = bool(config.SUPABASE_URL and config.SUPABASE_SERVICE_KEY)
-except Exception:
-    supabase = None
-    _has_supabase = False
 
 
 def _log_query(chat_id: int, text: str) -> None:
@@ -184,33 +178,30 @@ class WriterTelegramBot:
     async def _notebook(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Muestra información de la base de conocimiento RAG."""
+        """Muestra información de la base de conocimiento (context_rag local)."""
         await update.message.chat.send_action(action="typing")
 
         lines = ["📚 *Base de Conocimiento ImpuestIA*", ""]
 
-        # Contar chunks por tipo
         try:
-            from supabase_client import supabase
-            tbl = supabase.table("document_chunks")
-
-            # Total de chunks
-            result = tbl.select("*", count="exact").limit(0).execute()
-            total = result.count or 0
-            lines.append(f"📄 *Documentos indexados:* {total} chunks")
-
-            # Por tipo
-            for source_type in ["ley", "circular", "jurisprudencia_judicial", "oficio", "resolucion"]:
-                try:
-                    r = tbl.select("*", count="exact").eq("source_type", source_type).limit(0).execute()
-                    count = r.count or 0
-                    if count > 0:
-                        emoji = {"ley": "⚖️", "circular": "📋", "jurisprudencia_judicial": "🏛️",
-                                 "oficio": "📨", "resolucion": "📜"}.get(source_type, "📄")
-                        lines.append(f"  {emoji} {source_type.replace('_', ' ').title()}: {count}")
-                except Exception:
-                    pass
-
+            from context_rag.law_loader import law_loader
+            laws = law_loader.all()
+            for law in laws:
+                lines.append(f"⚖️ *{law.name}*")
+                lines.append(f"   {len(law._index)} artículos indexados (~{law.token_estimate:,} tokens)")
+            lines.append("")
+            # Notas aprobadas en el vault
+            try:
+                from article_index import article_index
+                from obsidian_writer import list_clientes
+                article_index.rebuild()
+                stats = article_index.stats()
+                lines.append(f"📝 Documentos del vault indexados: {stats['docs']}")
+                aprobadas = article_index.count_aprobadas()
+                lines.append(f"✅ Notas aprobadas: {aprobadas}")
+                lines.append(f"👥 Clientes: {len(list_clientes())}")
+            except Exception as e:
+                lines.append(f"ℹ️ Vault: {str(e)[:80]}")
         except Exception as e:
             lines.append(f"⚠️ No se pudo consultar la base: `{str(e)[:100]}`")
 
@@ -1056,6 +1047,23 @@ class WriterTelegramBot:
             # ── PASO 2: Context-RAG (leyes completas, sin chunking) ────────
             await _safe_edit(status_msg, "📚 Cargando textos legales completos...")
 
+            # Notas aprobadas (conocimiento validado por el usuario) — se cargan
+            # antes del prompt principal para que las leyes NO se recarguen con
+            # ellas y para que tengan prioridad sobre la búsqueda web.
+            approved_text = ""
+            try:
+                article_index.rebuild()
+                approved_text, _approved_used = article_index.approved_context(
+                    text,
+                    max_docs=config.APPROVED_NOTES_LIMIT,
+                    char_limit=config.APPROVED_NOTE_CHARS,
+                )
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Notas aprobadas no disponibles: {e}[/yellow]")
+
+            if approved_text:
+                await _safe_edit(status_msg, "📌 Usando notas aprobadas + texto legal...")
+
             system, user_prompt, prompt_input = await build_for_chat(
                 query=text,
                 llm_client=self.writer._llm,
@@ -1067,6 +1075,9 @@ class WriterTelegramBot:
             await _safe_edit(status_msg, f"💬 Analizando con {len(tags_loaded)} leyes (~{tokens_est:,} tokens{trim_note})...")
 
             # ── PASO 3: Enriquecer con búsqueda en vivo (opcional) ────────
+            # Las notas aprobadas van ANTES de la web; la web solo refuerza.
+            if approved_text:
+                user_prompt = f"{approved_text}\n{user_prompt}"
             live_context = ""
             if prompt_input.route.needs_live_search:
                 try:
@@ -1088,6 +1099,13 @@ class WriterTelegramBot:
             content = content.strip()
             source = "context_rag"
             search_results = []
+
+            # Guardrail anti-alucinación: valida que las citas existan en las
+            # fuentes efectivamente entregadas (leyes + notas aprobadas).
+            try:
+                content = guardrail_check(user_prompt, content)
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Guardrail: {e}[/yellow]")
 
             await _safe_delete(status_msg)
 

@@ -16,7 +16,8 @@
                 <a href="/files" class="sidebar-link {% if request.url.path.startswith('/files') %}active{% endif %}">Explorador</a>
                 <a href="/works" class="sidebar-link {% if request.url.path == '/works' %}active{% endif %}">Trabajos</a>
                 <span class="sidebar-section">Conocimiento</span>
-                <a href="/review/drafts" class="sidebar-link {% if request.url.path.startswith('/review') %}active{% endif %}">Arboles</a>
+                <a href="/review/drafts" class="sidebar-link {% if request.url.path.startswith('/review/drafts') %}active{% endif %}">Arboles</a>
+                <a href="/review/notas" class="sidebar-link {% if request.url.path.startswith('/review/notas') %}active{% endif %}">Notas aprobadas</a>
                 <a href="/skills" class="sidebar-link {% if request.url.path.startswith('/skill') %}active{% endif %}">Skills</a>
             </nav>
             <div class="sidebar-footer">

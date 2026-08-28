@@ -37,6 +37,15 @@ def _format_tags(tags: list[str] | str | None) -> str:
     return " [" + ", ".join(tags) + "]"
 
 
+def _normalize_tags(tags: list[str] | str | None) -> list[str]:
+    """Convierte tags a lista limpia de strings."""
+    if not tags:
+        return []
+    if isinstance(tags, str):
+        return [t.strip() for t in tags.split(",") if t.strip()]
+    return [str(t).strip() for t in tags if str(t).strip()]
+
+
 def _build_frontmatter(meta: dict) -> str:
     lines = ["---"]
     for k, v in meta.items():
@@ -70,6 +79,7 @@ def write_note(
     tags: Optional[list[str]] = None,
     fuentes: Optional[list[str]] = None,
     articulo: Optional[str] = None,
+    aprobada: bool = False,
     extra_meta: Optional[dict] = None,
 ) -> Path:
     """
@@ -85,11 +95,16 @@ def write_note(
         tags: lista de tags para frontmatter
         fuentes: fuentes legales citadas
         articulo: articulo de ley relacionado
+        aprobada: marcar como NOTA APROBADA (conocimiento validado que el bot consulta con prioridad)
         extra_meta: dict con metadatos adicionales
     """
     safe_name = _sanitize_filename(filename)
     target_dir = _ensure_dir(VAULT / folder)
     filepath = target_dir / f"{safe_name}.md"
+
+    tags = _normalize_tags(tags)
+    if aprobada and "aprobada" not in tags:
+        tags.append("aprobada")
 
     meta = {
         "fecha": datetime.now().strftime("%Y-%m-%d"),
@@ -105,6 +120,8 @@ def write_note(
         meta["fuentes"] = fuentes
     if tags:
         meta["tags"] = tags
+    if aprobada:
+        meta["aprobada"] = True
     if extra_meta:
         meta.update(extra_meta)
 
@@ -153,6 +170,7 @@ def write_jurisprudencia(
     tags: Optional[list[str]] = None,
     fuente: Optional[str] = None,
     organismo: str = "SII",
+    aprobada: bool = False,
 ) -> Path:
     """Escribe jurisprudencia en el vault."""
     if cliente:
@@ -169,6 +187,7 @@ def write_jurisprudencia(
         cliente=cliente,
         tags=tags,
         fuentes=[fuente] if fuente else None,
+        aprobada=aprobada,
     )
 
 
@@ -179,6 +198,7 @@ def write_peticion(
     filename: Optional[str] = None,
     titulo: Optional[str] = None,
     tags: Optional[list[str]] = None,
+    aprobada: bool = False,
 ) -> Path:
     """Escribe una peticion administrativa en la carpeta del cliente."""
     safe_cliente = _sanitize_filename(cliente)
@@ -191,6 +211,7 @@ def write_peticion(
         tipo="peticion",
         cliente=cliente,
         tags=tags,
+        aprobada=aprobada,
     )
 
 
@@ -201,6 +222,7 @@ def write_analisis(
     filename: Optional[str] = None,
     titulo: Optional[str] = None,
     tags: Optional[list[str]] = None,
+    aprobada: bool = False,
 ) -> Path:
     """Escribe un analisis de caso en la carpeta del cliente."""
     safe_cliente = _sanitize_filename(cliente)
@@ -213,6 +235,7 @@ def write_analisis(
         tipo="analisis",
         cliente=cliente,
         tags=tags,
+        aprobada=aprobada,
     )
 
 

@@ -47,7 +47,17 @@ CUSTOM_LLM_MODEL = os.getenv("CUSTOM_LLM_MODEL", "")
 CUSTOM_LLM_MAX_CONTEXT = int(os.getenv("CUSTOM_LLM_MAX_CONTEXT", "128000"))
 
 # ============================================
-# Supabase (OPCIONAL — solo usage_logs si esta configurado)
+# Notas Aprobadas — conocimiento validado por el usuario
+# ============================================
+# Notas del vault marcadas como aprobadas (aprobada: true) que el bot
+# consulta con prioridad ANTES de recurrir a la búsqueda web.
+APPROVED_NOTES_LIMIT = int(os.getenv("APPROVED_NOTES_LIMIT", "3"))
+APPROVED_NOTE_CHARS = int(os.getenv("APPROVED_NOTE_CHARS", "4000"))
+
+# ============================================
+# Supabase — OPCIONAL / LEGACY
+# Ya NO se usa en el runtime (el motor es context_rag). Queda documentado
+# por si se reedifica el backend vectorial más adelante.
 # ============================================
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")

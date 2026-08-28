@@ -19,6 +19,7 @@ from rich.console import Console
 import config
 from context_rag.context_router import RouteDecision, route_query
 from context_rag.law_loader import Law, law_loader
+from context_rag.law_map import law_map
 from litm import maybe_reorder
 
 console = Console()
@@ -70,6 +71,10 @@ def _build_system_prompt(base_agent_md: str | None = None, query: str = "") -> s
         "Tienes acceso al texto de las leyes indicadas mas abajo.\n"
         'Si ves "TEXTO COMPLETO" tienes la ley entera.\n'
         'Si ves "PARCIAL" tienes los articulos mas relevantes + un indice del resto.\n\n'
+        "Cada ley se abre con un INDICE ESTRUCTURAL (LIBRO / TITULO / PARRAFO con el "
+        "rango de articulos de cada seccion). Usa ese indice para UBICAR el tema dentro "
+        "de la ley antes de leer su texto: asi sabes exactamente que articulos leer y "
+        "no dices que una norma no existe solo porque no la viste.\n\n"
         "REGLAS:\n"
         "1. Toda cita DEBE venir del texto legal proporcionado. Si no aparece, di "
         "'No encontre esa informacion en el texto de la ley que tengo disponible. "
@@ -279,9 +284,10 @@ def _smart_trim_law(law: Law, query: str, max_tokens: int) -> tuple[str, int, bo
     """
     full_tokens = law.token_estimate
     summary = _relevance_summary(law, query)
+    structure_map = law_map.to_text_for([law.tag]) if law_map.build_for_tag(law.tag) else ""
 
     if full_tokens <= max_tokens:
-        text = _format_law_header(law) + summary + law.text
+        text = _format_law_header(law) + structure_map + summary + law.text
         return text, full_tokens, False
 
     # ── Smart trim: seleccionar articulos completos ──────────────
@@ -316,7 +322,7 @@ def _smart_trim_law(law: Law, query: str, max_tokens: int) -> tuple[str, int, bo
             tokens_used += index_tokens
 
     header = _format_law_header(law, partial=True)
-    text = header + summary + "\n".join(included)
+    text = header + structure_map + summary + "\n".join(included)
     return text, tokens_used, True
 
 

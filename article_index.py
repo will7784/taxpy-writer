@@ -131,6 +131,7 @@ class VaultDoc:
     cliente: str = ""
     refs: list[tuple[str, str]] = field(default_factory=list)
     mtime: float = 0.0
+    aprobada: bool = False
     _text: str = field(default="", repr=False)
 
     @property
@@ -147,6 +148,16 @@ class VaultDoc:
                 self._text = ""
         return self._text
 
+    def to_dict(self) -> dict:
+        return {
+            "title": self.title,
+            "tipo": self.tipo,
+            "cliente": self.cliente,
+            "refs": [list(r) for r in self.refs],
+            "mtime": self.mtime,
+            "aprobada": self.aprobada,
+        }
+
 
 def _parse_frontmatter(text: str) -> dict[str, str]:
     """Extrae campos simples del frontmatter YAML sin parsear todo el archivo."""
@@ -155,15 +166,40 @@ def _parse_frontmatter(text: str) -> dict[str, str]:
     if not m:
         return meta
     for line in m.group(1).splitlines():
-        kv = re.match(r"(\w+):\s*\"?([^\"\n]+?)\"?\s*$", line)
+        kv = re.match(r"(\w+):\s*\"?([^\"\n]*?)\"?\s*$", line)
         if kv:
-            meta[kv.group(1)] = kv.group(2)
+            meta[kv.group(1)] = kv.group(2).strip()
     return meta
+
+
+def _parse_bool(value: str | None) -> bool:
+    """Interpreta 'true'/'True'/'1' como True (frontmatter YAML sin parsear)."""
+    if value is None:
+        return False
+    return value.strip().lower() in ("true", "1", "yes", "si", "sí")
 
 
 # ---------------------------------------------------------------------------
 # Indice
 # ---------------------------------------------------------------------------
+
+
+def _ensure_frontmatter_aprobada(match_text: str) -> str:
+    """Reconstruye el bloque de frontmatter con 'aprobada: true' y tag 'aprobada'."""
+    head = match_text
+    head = re.sub(r"^\s*aprobada:\s*.*$", "aprobada: true", head, flags=re.MULTILINE)
+    if not re.search(r"^aprobada:\s*true\s*$", head, flags=re.MULTILINE):
+        head = head.rstrip() + "\naprobada: true"
+    # Asegurar tag aprobada
+    tag_m = re.search(r"^tags:\s*\[(.*)\]", head, flags=re.MULTILINE)
+    if tag_m:
+        tags = [t.strip() for t in tag_m.group(1).split(",") if t.strip()]
+        if "aprobada" not in tags:
+            tags.append("aprobada")
+        head = head[:tag_m.start()] + f"tags: [{', '.join(tags)}]" + head[tag_m.end():]
+    elif not re.search(r"^tags:", head, flags=re.MULTILINE):
+        head = head.rstrip() + "\ntags: [aprobada]"
+    return head
 
 
 class ArticleIndex:
@@ -192,6 +228,7 @@ class ArticleIndex:
                     cliente=entry.get("cliente", ""),
                     refs=[tuple(r) for r in entry.get("refs", [])],
                     mtime=entry.get("mtime", 0.0),
+                    aprobada=entry.get("aprobada", False),
                 )
                 self._docs[path] = doc
             self._rebuild_ref_map()
@@ -208,6 +245,7 @@ class ArticleIndex:
                     "cliente": d.cliente,
                     "refs": [list(r) for r in d.refs],
                     "mtime": d.mtime,
+                    "aprobada": d.aprobada,
                 }
                 for path, d in self._docs.items()
             }
@@ -265,6 +303,7 @@ class ArticleIndex:
                 cliente=meta.get("cliente", ""),
                 refs=extract_article_refs(text),
                 mtime=mtime,
+                aprobada=_parse_bool(meta.get("aprobada", None)),
                 _text=text,
             )
             self._docs[spath] = doc
@@ -292,12 +331,15 @@ class ArticleIndex:
         unique = list(dict.fromkeys(paths))
         return [self._docs[p] for p in unique[:max_docs] if p in self._docs]
 
-    def search(self, query: str, *, max_docs: int = 8, cliente: str | None = None) -> list[VaultDoc]:
+    def search(self, query: str, *, max_docs: int = 8, cliente: str | None = None, aprobadas_only: bool = False) -> list[VaultDoc]:
         """Busqueda hibrida: citas exactas de articulo + keywords.
 
         1. Si la query menciona articulos ("art 200", "art. 17 N 8"), los docs
            que los citan reciben score alto.
         2. Keyword scoring sobre titulo + cuerpo como desempate.
+
+        Si aprobadas_only=True, solo considera notas marcadas como aprobadas
+        (conocimiento validado por el usuario).
         """
         self._load()
         refs = extract_article_refs(query)
@@ -317,6 +359,8 @@ class ArticleIndex:
 
         scored: list[tuple[float, VaultDoc]] = []
         for path, doc in self._docs.items():
+            if aprobadas_only and not doc.aprobada:
+                continue
             if cliente and doc.cliente and doc.cliente.lower() != cliente.lower():
                 continue
             score = 0.0
@@ -329,11 +373,110 @@ class ArticleIndex:
                     score += 5.0
                 elif w in text[:4000]:
                     score += 1.0
+            if doc.aprobada:
+                score += 2.0  # leve prioridad para notas aprobadas
             if score > 0:
                 scored.append((score, doc))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [doc for _, doc in scored[:max_docs]]
+
+    def pending_approval(self, *, max_docs: int = 100) -> list[VaultDoc]:
+        """Notas del vault de tipos revisables que AUN no estan aprobadas."""
+        self._load()
+        revisables = {"jurisprudencia", "peticion", "analisis", "estudio", "nota"}
+        result = sorted(
+            (d for d in self._docs.values()
+             if not d.aprobada and (d.tipo in revisables or not d.tipo)),
+            key=lambda d: d.mtime,
+            reverse=True,
+        )
+        return result[:max_docs]
+
+    def set_aprobada(self, path: str, aprobada: bool) -> bool:
+        """Marca/desmarca una nota como aprobada editando su frontmatter en disco."""
+        self._load()
+        doc = self._docs.get(path)
+        if not doc:
+            return False
+        try:
+            p = Path(path)
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return False
+
+        if aprobada:
+            # Añadir/reemplazar campo aprobada: true en el frontmatter
+            head_match = re.match(r"^---\s*\n(.*?)\n---", text, flags=re.DOTALL)
+            if head_match:
+                new_head = _ensure_frontmatter_aprobada(head_match.group(1))
+                body = "---\n" + new_head + "\n---" + text[head_match.end():]
+            else:
+                body = f"---\naprobada: true\ntags: [aprobada]\n---\n\n{text}"
+        else:
+            head_match = re.match(r"^---\s*\n(.*?)\n---", text, flags=re.DOTALL)
+            if head_match:
+                head = head_match.group(1)
+                head = re.sub(r"^\s*aprobada:\s*.*$", "", head, flags=re.MULTILINE)
+                # Quitar 'aprobada' del tag si corresponde
+                tag_m = re.search(r"^tags:\s*\[(.*)\]", head, flags=re.MULTILINE)
+                if tag_m:
+                    tags = [t.strip() for t in tag_m.group(1).split(",") if t.strip()]
+                    tags = [t for t in tags if t != "aprobada"]
+                    head = head[:tag_m.start()] + f"tags: [{', '.join(tags)}]" + head[tag_m.end():]
+                body = "---\n" + head.strip() + "\n---" + text[head_match.end():]
+            else:
+                body = text
+        p.write_text(body, encoding="utf-8")
+
+        # Actualizar índice
+        doc.aprobada = aprobada
+        try:
+            doc.mtime = p.stat().st_mtime
+        except OSError:
+            pass
+        doc._text = body
+        self._save()
+        return True
+
+    def count_aprobadas(self) -> int:
+        self._load()
+        return sum(1 for d in self._docs.values() if d.aprobada)
+
+    def approved_context(self, query: str, *, max_docs: int = 3, char_limit: int = 4000) -> tuple[str, list[dict]]:
+        """Devuelve (texto_contexto, docs_usados) para las notas aprobadas relevantes.
+
+        Se usa para inyectar conocimiento validado por el usuario en el prompt,
+        con prioridad sobre la búsqueda web. Cada nota se etiqueta con su tipo,
+        cliente y un aviso de que es conocimiento aprobado por el usuario.
+        """
+        docs = self.search(query, max_docs=max_docs, aprobadas_only=True)
+        if not docs:
+            return "", []
+
+        parts: list[str] = []
+        used: list[dict] = []
+        for i, d in enumerate(docs, 1):
+            body = d.load_text()
+            # Limpiar el frontmatter y el header de título (se duplicaría con la etiqueta)
+            body = re.sub(r"^---.*?---\s*", "", body, flags=re.DOTALL)
+            body = re.sub(r"^#\s+.*\n+", "", body)  # '# Título' de write_note
+            body = re.sub(r"^\#{1,3}\s+.*\n+", "", body)
+            body = body.strip()
+            if char_limit and len(body) > char_limit:
+                body = body[:char_limit] + "\n[... truncado por longitud ...]"
+            label = (d.tipo or "NOTA").upper()
+            cliente = f" - Cliente: {d.cliente}" if d.cliente else ""
+            parts.append(f"[NOTA APROBADA POR EL USUARIO #{i}]\nTipo: {label}{cliente}\nTítulo: {d.title}\n{body}")
+            used.append({"path": d.path, "title": d.title, "tipo": d.tipo, "cliente": d.cliente})
+
+        header = (
+            "=== NOTAS APROBADAS (conocimiento validado por el usuario) ===\n"
+            "Estas notas fueron revisadas y aprobadas por el tributarista. "
+            "Si el tema de la consulta se resuelve en ellas, cítalas como fuente "
+            "autorizada ANTES de dudar o de inventar algo.\n"
+        )
+        return header + "\n".join(parts) + "\n", used
 
     def stats(self) -> dict[str, int]:
         self._load()

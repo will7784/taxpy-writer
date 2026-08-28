@@ -16,10 +16,10 @@ import json
 import re
 import textwrap
 from pathlib import Path
+from typing import Any
 
 import config
 from llm_client import LLMClient
-from models import DocumentChunk
 from schemas import DraftNode, DraftTree
 
 DRAFTS_DIR = Path(config.BASE_DIR) / "decision_trees" / "_drafts"
@@ -56,12 +56,12 @@ _SYSTEM_PROMPT = (
 )
 
 
-def _suggest_tree_id(chunk: DocumentChunk) -> str:
+def _suggest_tree_id(chunk: Any) -> str:
     base = chunk.chunk_uid.replace("ley_", "").replace("_art_", "_")
     return re.sub(r"[^a-z0-9_]", "", base.lower())
 
 
-async def draft_tree_from_chunk(chunk: DocumentChunk, llm_client: LLMClient) -> DraftTree:
+async def draft_tree_from_chunk(chunk: Any, llm_client: LLMClient) -> DraftTree:
     """Pide al LLM un borrador de árbol de decisión a partir de un chunk ya ingestado."""
     user_prompt = (
         f"Ley/código: {chunk.law_tag}\n"

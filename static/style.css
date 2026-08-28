@@ -129,6 +129,17 @@ body {
 
 .btn-primary:hover { background: var(--primary-hover); }
 
+.btn-success {
+    background: rgba(34,197,94,0.15);
+    border: 1px solid var(--success);
+    color: var(--success);
+}
+
+.btn-success:hover { background: var(--success); color: #fff; }
+
+/* Botones de tabla/formularios en linea */
+table form button, .card .btn { width: auto; }
+
 .btn-sm { padding: 0.35rem 0.7rem; font-size: 0.8rem; }
 
 .btn-outline {
@@ -155,6 +166,20 @@ body {
 
 .alert-success { background: rgba(34,197,94,0.1); border: 1px solid var(--success); color: var(--success); }
 .alert-error { background: rgba(239,68,68,0.1); border: 1px solid var(--danger); color: var(--danger); }
+
+.nota-preview {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem;
+    max-height: 70vh;
+    overflow-y: auto;
+    font-family: var(--font-mono, monospace);
+    font-size: 0.85rem;
+    color: var(--text);
+}
 
 /* Status */
 .status-item {

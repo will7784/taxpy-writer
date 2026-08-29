@@ -451,3 +451,37 @@ code {
 }
 
 /* ── Works Panel ─────────────────────────────── */
+
+
+/* Dropzone de subida de material */
+.dropzone {
+    border: 2px dashed var(--border);
+    border-radius: 10px;
+    padding: 2.5rem 1.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: rgba(127,127,127,0.03);
+}
+.dropzone:hover, .dropzone.dragover {
+    border-color: var(--primary);
+    background: rgba(34,197,94,0.05);
+}
+.dz-icon { font-size: 2rem; margin-bottom: 0.4rem; }
+.dz-title { font-weight: 600; color: var(--text); }
+.dz-sub { color: var(--text-muted); font-size: 0.85rem; }
+
+.file-list { display: flex; flex-direction: column; gap: 0.3rem; margin-top: 0.5rem; }
+.file-row {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.4rem 0.6rem;
+    border: 1px solid var(--border); border-radius: 6px;
+    font-size: 0.85rem;
+}
+.file-row .file-ic { width: 1.2rem; text-align: center; }
+.file-row .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row .file-name small { color: var(--text-muted); }
+.file-row .file-status { font-size: 0.8rem; }
+.file-status.ok { color: var(--success); }
+.file-status.err { color: var(--danger); }
+.file-status.subiendo { color: var(--text-muted); }

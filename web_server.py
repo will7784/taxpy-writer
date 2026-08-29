@@ -462,32 +462,29 @@ async def review_nota_unapprove(request: Request, rel_path: str):
 # de aprobacion (carpeta Entrada/), listo para revisar y aprobar aqui mismo.
 
 _UPLOAD_TYPES = {"jurisprudencia", "peticion", "analisis", "estudio", "nota"}
+_UPLOAD_EXTS = {"txt", "md", "docx", "pdf", "png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"}
 
 
-@app.post("/review/notas/upload")
-async def review_nota_upload(
-    request: Request,
-    material: UploadFile,
-    titulo: str = Form(""),
-    tipo: str = Form("nota"),
-    cliente: str = Form(""),
-):
-    if not _is_authenticated(request):
-        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+async def _process_upload(
+    filename: str,
+    data: bytes,
+    *,
+    titulo: str = "",
+    tipo: str = "nota",
+    cliente: str = "",
+) -> dict:
+    """Procesa un archivo subido y lo guarda como nota pendiente en Entrada/.
 
-    filename = material.filename or "documento"
+    Returns:
+        {"ok": True, "path": ..., "ocr": bool} o {"ok": False, "error": str}
+    """
     ext = Path(filename).suffix.lower().lstrip(".")
-    if ext not in {"txt", "md", "docx", "pdf", "png", "jpg", "jpeg", "webp", "tiff", "tif", "bmp"}:
-        return RedirectResponse(
-            url="/review/notas?error=Formato+no+soportado:+usar+pdf/docx/txt/md/imagen",
-            status_code=status.HTTP_302_FOUND,
-        )
+    if ext not in _UPLOAD_EXTS:
+        return {"ok": False, "error": f"Formato no soportado: .{ext}"}
     if tipo not in _UPLOAD_TYPES:
         tipo = "nota"
-
-    data = await material.read()
     if not data:
-        return RedirectResponse(url="/review/notas?error=Archivo+vacio", status_code=status.HTTP_302_FOUND)
+        return {"ok": False, "error": "Archivo vacío"}
 
     import tempfile
     tmp = Path(tempfile.mkdtemp()) / f"upload.{ext}"
@@ -497,10 +494,7 @@ async def review_nota_upload(
         markdown, meta = await extract_markdown(tmp)
     except Exception as e:
         logger.exception("Fallo procesamiento de material")
-        return RedirectResponse(
-            url=f"/review/notas?error=No+se+pudo+procesar+el+archivo:+{str(e)[:120]}",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return {"ok": False, "error": f"No se pudo procesar: {str(e)[:140]}"}
     finally:
         try:
             tmp.unlink(missing_ok=True)
@@ -509,10 +503,7 @@ async def review_nota_upload(
             pass
 
     if not markdown.strip():
-        return RedirectResponse(
-            url="/review/notas?error=No+se+extrajo+texto+del+archivo+(¿escaneo+muy+pobre?)",
-            status_code=status.HTTP_302_FOUND,
-        )
+        return {"ok": False, "error": "No se extrajo texto del archivo (¿escaneo muy pobre?)"}
 
     body = (
         f"## Material original\n\n"
@@ -534,9 +525,57 @@ async def review_nota_upload(
         fuentes=[filename],
     )
     article_index.rebuild()
+    return {"ok": True, "path": str(path), "ocr": bool(meta.get("ocr", False))}
 
-    msg = "Material+subido:+rev%C3%ADsalo+y+aprueba"
-    return RedirectResponse(url=f"/review/notas?message={msg}", status_code=status.HTTP_302_FOUND)
+
+@app.post("/review/notas/upload")
+async def review_nota_upload(
+    request: Request,
+    material: UploadFile,
+    titulo: str = Form(""),
+    tipo: str = Form("nota"),
+    cliente: str = Form(""),
+):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+
+    filename = material.filename or "documento"
+    data = await material.read()
+    result = await _process_upload(
+        filename, data, titulo=titulo, tipo=tipo, cliente=cliente
+    )
+    if result["ok"]:
+        return RedirectResponse(
+            url="/review/notas?message=Material+subido:+rev%C3%ADsalo+y+aprueba",
+            status_code=status.HTTP_302_FOUND,
+        )
+    return RedirectResponse(
+        url=f"/review/notas?error={result['error']}",
+        status_code=status.HTTP_302_FOUND,
+    )
+
+
+@app.post("/api/notas/upload")
+async def api_notas_upload(
+    request: Request,
+    material: UploadFile,
+    titulo: str = Form(""),
+    tipo: str = Form("nota"),
+    cliente: str = Form(""),
+):
+    """Endpoint JSON para el drag & drop: sube un archivo y responde resultado."""
+    if not _is_authenticated(request):
+        return JSONResponse({"ok": False, "error": "No autenticado"}, status_code=401)
+
+    filename = material.filename or "documento"
+    data = await material.read()
+    result = await _process_upload(
+        filename, data, titulo=titulo, tipo=tipo, cliente=cliente
+    )
+    if result["ok"]:
+        result["filename"] = filename
+        return JSONResponse(result)
+    return JSONResponse(result, status_code=400)
 
 
 # ── Gestión de Archivos (Fase 2) ─────────────────────────────

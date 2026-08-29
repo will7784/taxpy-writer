@@ -13,38 +13,44 @@
 <div class="card full-width">
     <h2>📤 Subir material a revisión</h2>
     <p class="hint">
-        Formatos: <code>.txt .md .docx .pdf .png .jpg</code>. Los PDF escaneados y las
-        imágenes se procesan con <strong>OCR de visión (GPT-4o)</strong>. El resultado se
-        guarda como nota pendiente en <code>Entrada/</code> del vault — aprueba solo lo que valides.
+        Arrastra y suelta archivos, o haz click para seleccionar. Formatos:
+        <code>.txt .md .docx .pdf .png .jpg</code>. Los PDF escaneados y las imágenes se
+        procesan con <strong>OCR de visión (GPT-4o)</strong>. Se guardan como notas pendientes
+        en <code>Entrada/</code> del vault — aprueba solo lo que valides.
     </p>
-    <form id="upload-form" onsubmit="uploadMaterial(event)" enctype="multipart/form-data">
-        <div class="grid grid-2">
-            <div class="form-group">
-                <label>Archivo</label>
-                <input type="file" name="material" accept=".txt,.md,.docx,.pdf,.png,.jpg,.jpeg,.webp,.tiff,.bmp" required>
-            </div>
-            <div class="form-group">
-                <label>Título (opcional)</label>
-                <input type="text" name="titulo" placeholder="Por defecto, el nombre del archivo">
-            </div>
-            <div class="form-group">
-                <label>Tipo</label>
-                <select name="tipo">
-                    <option value="jurisprudencia">Jurisprudencia / oficio / circular</option>
-                    <option value="analisis">Análisis</option>
-                    <option value="peticion">Petición</option>
-                    <option value="estudio">Estudio</option>
-                    <option value="nota" selected>Nota / otro</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label>Cliente (opcional)</label>
-                <input type="text" name="cliente" placeholder="Ej: Nano_Calderon">
-            </div>
+
+    <div id="dropzone" class="dropzone" onclick="document.getElementById('file-input').click()">
+        <div class="dz-icon">📂</div>
+        <div class="dz-title">Arrastra tus archivos aquí</div>
+        <div class="dz-sub">o haz click para seleccionarlos</div>
+        <input type="file" id="file-input" name="files" multiple
+               accept=".txt,.md,.docx,.pdf,.png,.jpg,.jpeg,.webp,.tiff,.bmp"
+               style="display:none;" onchange="addFiles(this.files)">
+    </div>
+
+    <div class="grid grid-2" style="margin-top:0.75rem;">
+        <div class="form-group">
+            <label>Tipo (aplica a todos)</label>
+            <select id="tipo-select">
+                <option value="jurisprudencia">Jurisprudencia / oficio / circular</option>
+                <option value="analisis">Análisis</option>
+                <option value="peticion">Petición</option>
+                <option value="estudio">Estudio</option>
+                <option value="nota" selected>Nota / otro</option>
+            </select>
         </div>
-        <button type="submit" class="btn btn-primary" style="width:auto;">Subir y procesar</button>
-        <div id="upload-status" style="margin-top:0.5rem;"></div>
-    </form>
+        <div class="form-group">
+            <label>Cliente (opcional)</label>
+            <input type="text" id="cliente-input" placeholder="Ej: Nano_Calderon">
+        </div>
+    </div>
+
+    <div id="file-list" style="margin-top:0.5rem;"></div>
+
+    <button id="upload-btn" class="btn btn-primary" style="width:auto;margin-top:0.75rem;" onclick="uploadAll()">
+        Subir y procesar (<span id="file-count">0</span>)
+    </button>
+    <div id="upload-status" style="margin-top:0.5rem;"></div>
 </div>
 
 <div class="card full-width">
@@ -84,19 +90,103 @@
 </div>
 
 <script>
-async function uploadMaterial(e) {
+let queue = [];
+
+const dz = document.getElementById('dropzone');
+const ACCEPTED = ['txt','md','docx','pdf','png','jpg','jpeg','webp','tiff','tif','bmp'];
+
+['dragenter','dragover'].forEach(ev => dz.addEventListener(ev, e => {
     e.preventDefault();
-    const form = e.target;
-    const status = document.getElementById('upload-status');
-    status.innerHTML = '<span style="color:var(--text-muted);">Procesando… (el OCR de escaneos puede tardar 1-2 min)</span>';
-    try {
-        const resp = await fetch('/review/notas/upload', { method: 'POST', body: new FormData(form) });
-        if (resp.redirected) { window.location.href = resp.url; return; }
-        const html = await resp.text();
-        status.innerHTML = '<div class="alert alert-error">Respuesta inesperada del servidor.</div>';
-    } catch (err) {
-        status.innerHTML = '<div class="alert alert-error">Error: ' + err.message + '</div>';
+    dz.classList.add('dragover');
+}));
+['dragleave','drop'].forEach(ev => dz.addEventListener(ev, e => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+}));
+dz.addEventListener('drop', e => addFiles(e.dataTransfer.files));
+
+function extOk(name) {
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    return ACCEPTED.includes(ext);
+}
+
+function addFiles(files) {
+    for (const f of files) {
+        if (!extOk(f.name)) {
+            flash(`Formato no soportado: ${f.name}`);
+            continue;
+        }
+        queue.push({ file: f, status: 'espera', msg: '' });
     }
+    renderQueue();
+}
+
+function renderQueue() {
+    const list = document.getElementById('file-list');
+    if (!queue.length) { list.innerHTML = ''; }
+    else {
+        list.innerHTML = '<div class="file-list">' + queue.map((item, i) => {
+            const kb = (item.file.size / 1024).toFixed(0);
+            const icon = item.status === 'ok' ? '✅' : item.status === 'err' ? '❌' : item.status === 'subiendo' ? '⏳' : '📄';
+            return `<div class="file-row">
+                <span class="file-ic">${icon}</span>
+                <span class="file-name" title="${item.file.name}">${item.file.name} <small>(${kb} KB)</small></span>
+                <span class="file-status ${item.status}">${item.msg || item.status}</span>
+                <button class="btn btn-sm btn-outline" onclick="removeFile(${i})">✕</button>
+            </div>`;
+        }).join('') + '</div>';
+    }
+    document.getElementById('file-count').textContent = queue.length;
+}
+
+function removeFile(i) {
+    if (queue[i] && queue[i].status === 'subiendo') return;
+    queue.splice(i, 1);
+    renderQueue();
+}
+
+async function uploadAll() {
+    if (!queue.length) { flash('Primero arrastra o selecciona archivos.'); return; }
+    const btn = document.getElementById('upload-btn');
+    btn.disabled = true;
+    const tipo = document.getElementById('tipo-select').value;
+    const cliente = document.getElementById('cliente-input').value.trim();
+    const status = document.getElementById('upload-status');
+    let ok = 0, fail = 0;
+
+    for (let i = 0; i < queue.length; i++) {
+        const item = queue[i];
+        if (item.status === 'ok') { ok++; continue; }
+        item.status = 'subiendo'; item.msg = 'procesando…';
+        renderQueue();
+        try {
+            const fd = new FormData();
+            fd.append('material', item.file);
+            fd.append('tipo', tipo);
+            fd.append('cliente', cliente);
+            const resp = await fetch('/api/notas/upload', { method: 'POST', body: fd });
+            const json = await resp.json();
+            if (json.ok) { item.status = 'ok'; item.msg = 'listo'; ok++; }
+            else { item.status = 'err'; item.msg = json.error || 'error'; fail++; }
+        } catch (err) {
+            item.status = 'err'; item.msg = 'error de red'; fail++;
+        }
+        renderQueue();
+    }
+
+    btn.disabled = false;
+    if (ok > 0 && fail === 0) {
+        status.innerHTML = `<div class="alert alert-success">${ok} archivo(s) procesado(s). Recargando lista…</div>`;
+        setTimeout(() => location.reload(), 1200);
+    } else if (fail > 0) {
+        status.innerHTML = `<div class="alert alert-error">${ok} ok · ${fail} con error. Revisa los marcados en rojo.</div>`;
+    }
+}
+
+function flash(msg) {
+    const s = document.getElementById('upload-status');
+    s.innerHTML = `<div class="alert alert-error">${msg}</div>`;
+    setTimeout(() => { s.innerHTML = ''; }, 4000);
 }
 </script>
 {% endblock %}

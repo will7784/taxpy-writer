@@ -327,7 +327,7 @@ async def _export_ebook(outline: EbookOutline, content: str) -> dict[str, str]:
             folder="00_Indice",
             filename=f"ebook_{safe_name}",
             content=content,
-            titulo=outline.titulo,
+            title=outline.titulo,
             tipo="ebook",
             tags=["ebook", "libro"] + [outline.titulo.lower().replace(" ", "-")],
         )

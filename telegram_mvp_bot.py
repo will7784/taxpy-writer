@@ -409,7 +409,7 @@ class WriterTelegramBot:
                     folder=f"Clientes/{cliente}/Notas",
                     filename=f"redaccion_{t.id}",
                     content=resultado,
-                    titulo=instrucciones[:50],
+                    title=instrucciones[:50],
                     tipo=tipo,
                     cliente=cliente,
                 )

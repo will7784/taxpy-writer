@@ -280,7 +280,7 @@ def procesar_entrada_cliente(
                         folder=f"Clientes/{cliente}/Notas",
                         filename=f"trabajo_{t.id}",
                         content=resultado,
-                        titulo=t.titulo,
+                        title=t.titulo,
                         tipo=tipo,
                         cliente=cliente,
                     )

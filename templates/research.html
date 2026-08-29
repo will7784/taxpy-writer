@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Investigación{% endblock %}
+{% block content %}
+<h1>🔍 Investigación web</h1>
+<p class="hint">
+    Busca jurisprudencia, circulares, oficios y doctrina en fuentes oficiales
+    (<code>sii.cl</code>, <code>bcn.cl</code>). Los resultados se guardan en el vault
+    como notas pendientes: revísalas y aprueba solo lo que valides.
+</p>
+{% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+{% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+
+<div class="card full-width">
+    <div class="grid grid-2" style="margin-bottom:0.75rem;">
+        <div class="form-group">
+            <label>Cliente (opcional)</label>
+            <select id="res-cliente">
+                <option value="">— Sin cliente (general) —</option>
+                {% for c in clientes %}
+                <option value="{{ c.nombre }}">{{ c.nombre }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Resultados a buscar</label>
+            <select id="res-max">
+                <option value="3">3</option>
+                <option value="5">5</option>
+                <option value="8">8</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="res-chat" id="res-chat">
+        <div class="res-msg res-bot" data-init>
+            Hola 👋 ¿Qué necesitas investigar? Ejemplos:<br>
+            • "prescripción art 200 CT jurisprudencia 2025"<br>
+            • "circular SII régimen pro pyme 2025"<br>
+            • "oficio art 17 n 8 LIR venta de inmuebles"
+        </div>
+    </div>
+
+    <form id="res-form" onsubmit="doResearch(event)" style="display:flex;gap:0.5rem;margin-top:0.75rem;">
+        <input type="text" id="res-input" placeholder="Escribe qué quieres investigar…" style="flex:1;" required>
+        <button type="submit" class="btn btn-primary" style="width:auto;">Investigar 🔍</button>
+    </form>
+    <div id="res-status" style="margin-top:0.5rem;"></div>
+</div>
+
+<script>
+function addMsg(role, html) {
+    const chat = document.getElementById('res-chat');
+    const div = document.createElement('div');
+    div.className = 'res-msg ' + (role === 'user' ? 'res-user' : 'res-bot');
+    div.innerHTML = html;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+    return div;
+}
+
+function esc(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+async function doResearch(e) {
+    e.preventDefault();
+    const input = document.getElementById('res-input');
+    const q = input.value.trim();
+    if (!q) return;
+
+    addMsg('user', esc(q));
+    input.value = '';
+
+    const status = document.getElementById('res-status');
+    status.innerHTML = '<span style="color:var(--text-muted);">Buscando y procesando… (puede tardar 30-60 s)</span>';
+
+    try {
+        const fd = new FormData();
+        fd.append('query', q);
+        fd.append('cliente', document.getElementById('res-cliente').value);
+        fd.append('max_results', document.getElementById('res-max').value);
+
+        const resp = await fetch('/api/research', { method: 'POST', body: fd });
+        const json = await resp.json();
+        status.innerHTML = '';
+
+        if (json.error) {
+            addMsg('bot', '<div class="alert alert-error">' + esc(json.error) + '</div>');
+            return;
+        }
+
+        if (json.resultados === 0) {
+            addMsg('bot', 'No encontré resultados para esa búsqueda. Prueba con términos más específicos.');
+            return;
+        }
+
+        // Mostrar los resultados
+        let html = `<strong>Investigación: ${esc(json.query)}</strong><br><small>${json.resultados} resultado(s) — guardados en el vault</small><br><br>`;
+        html += `<div class="res-reply">${json.reply.replace(/\n/g, '<br>')}</div>`;
+        html += `<br><em>Nota: aproba las que valides desde <a href="/review/notas">Notas aprobadas</a>.</em>`;
+        addMsg('bot', html);
+    } catch (err) {
+        status.innerHTML = '';
+        addMsg('bot', '<div class="alert alert-error">Error: ' + esc(err.message) + '</div>');
+    }
+}
+</script>
+{% endblock %}

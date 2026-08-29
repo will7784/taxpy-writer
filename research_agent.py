@@ -183,7 +183,7 @@ def save_research_to_vault(
         folder=f"Clientes/{cliente}/Notas" if cliente else "00_Indice",
         filename=f"research_summary_{timestamp}",
         content=_build_summary(query, results, saved_files),
-        titulo=f"Investigacion: {query[:60]}",
+        title=f"Investigacion: {query[:60]}",
         tipo="investigacion",
         cliente=cliente,
         tags=["research", "investigacion"],

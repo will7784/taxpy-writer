@@ -594,7 +594,7 @@ async def files_home(request: Request):
     })
 
 
-@app.get("/files/{cliente}", response_class=HTMLResponse)
+@app.get("/files/{cliente}/{subfolder:path}", response_class=HTMLResponse)
 async def files_cliente(request: Request, cliente: str, subfolder: str = ""):
     if not _is_authenticated(request):
         return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
@@ -865,6 +865,16 @@ async def api_process_cliente(request: Request, cliente: str):
 
 
 # ── Research Agent (Fase 5) ───────────────────────────────────
+
+@app.get("/research", response_class=HTMLResponse)
+async def research_page(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    clientes = list_clientes()
+    return templates.TemplateResponse(request, "research.html", {
+        "clientes": clientes,
+    })
+
 
 @app.post("/api/research")
 async def api_research(

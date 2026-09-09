@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Asistente{% endblock %}
+{% block content %}
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+<script>window.__CLIENTES__ = {{ clientes|tojson }};</script>
+
+<style>
+  .asist-layout { display:grid; grid-template-columns: 1fr 320px; gap:1rem; align-items:start; }
+  @media (max-width: 900px){ .asist-layout { grid-template-columns: 1fr; } }
+  .asist-chat { background:var(--surface, #fff); border:1px solid var(--border, #ddd); border-radius:10px;
+                padding:1rem; max-height:62vh; overflow:auto; }
+  .asist-msg { margin-bottom:.8rem; padding:.7rem .9rem; border-radius:10px; line-height:1.5; }
+  .asist-msg.res-user { background:#eef2ff; margin-left:2rem; }
+  .asist-msg.res-bot { background:#f7f7f8; margin-right:2rem; }
+  .asist-status { font-size:.85rem; color:var(--text-muted, #666); padding:.5rem 0; }
+  .asist-sources { background:var(--surface, #fff); border:1px solid var(--border, #ddd); border-radius:10px; padding:1rem; }
+  .asist-sources h3 { margin:0 0 .6rem; font-size:1rem; }
+  .src-card, .ev-card { padding:.55rem .7rem; border:1px solid var(--border, #e2e2e2); border-radius:8px;
+                        margin-bottom:.55rem; font-size:.88rem; }
+  .src-card a { font-weight:600; }
+  .tag-oficial { background:#e6f4ea; color:#137333; font-size:.7rem; padding:.1rem .45rem; border-radius:99px; }
+  .tag-sec { background:#fef3e0; color:#b06000; font-size:.7rem; padding:.1rem .45rem; border-radius:99px; }
+  .muted { color:var(--text-muted, #888); font-size:.8rem; }
+  .asist-form { display:flex; gap:.5rem; margin-top:.75rem; flex-wrap:wrap; align-items:flex-end; }
+  .asist-form .field { display:flex; flex-direction:column; gap:.2rem; }
+  .asist-form label { font-size:.8rem; color:var(--text-muted, #666); }
+  .asist-form input[type=text] { flex:1; min-width:220px; }
+</style>
+
+{% raw %}
+<div id="asistente">
+  <h1>ClaudIA · Asistente de investigación</h1>
+  <p class="hint">
+    Responde la pregunta aplicada al caso, separa hechos, supuestos y riesgos, y abre las fuentes oficiales que respaldan cada conclusión.
+  </p>
+
+  <div class="card full-width">
+    <div class="asist-form">
+      <div class="field">
+        <label>Cliente (opcional)</label>
+        <select v-model="cliente">
+          <option value="">— Sin cliente (general) —</option>
+          <option v-for="c in clientes" :key="c.nombre" :value="c.nombre">{{ c.nombre }}</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Fecha de los hechos (opcional)</label>
+        <input type="date" v-model="fecha">
+      </div>
+    </div>
+
+    <div class="asist-layout" style="margin-top:1rem;">
+      <div class="asist-chat">
+        <div v-for="(m,i) in messages" :key="i" :class="'asist-msg ' + (m.role === 'user' ? 'res-user' : 'res-bot')">
+          <span v-if="m.role === 'user'" v-text="m.text"></span>
+          <span v-else v-html="m.html"></span>
+        </div>
+        <div v-if="status" class="asist-status">{{ status }}</div>
+        <p v-if="messages.length === 0" class="muted">
+          ¿Qué necesitas investigar? Ej.: "prescripción art 200 CT jurisprudencia 2025", "oficio art 17 n 8 LIR venta de inmuebles".
+        </p>
+      </div>
+
+      <aside class="asist-sources">
+        <h3>Fuentes citadas</h3>
+        <p v-if="sources.length === 0" class="muted">Aún no hay fuentes.</p>
+        <div v-for="(s,i) in sources" :key="i" class="src-card">
+          <span :class="s.official ? 'tag-oficial' : 'tag-sec'">{{ s.official ? 'Oficial' : 'Secundaria' }}</span>
+          <a :href="s.url" target="_blank" rel="noopener noreferrer">{{ s.title }}</a>
+          <div v-if="s.location" class="muted">{{ s.location }}</div>
+        </div>
+        <template v-if="evidence.length">
+          <h3 style="margin-top:1rem;">Pasajes que respaldan</h3>
+          <div v-for="(e,i) in evidence" :key="i" class="ev-card">
+            <strong>{{ e.statement }}</strong>
+            <blockquote style="margin:.3rem 0 0;">{{ e.quote }}</blockquote>
+          </div>
+        </template>
+      </aside>
+    </div>
+
+    <form @submit.prevent="submit" class="asist-form">
+      <input type="text" v-model="query" placeholder="Escribe qué quieres investigar…" required>
+      <button type="submit" class="btn btn-primary" :disabled="loading">Investigar</button>
+    </form>
+  </div>
+</div>
+{% endraw %}
+
+<script>
+const { createApp } = Vue;
+createApp({
+  data() {
+    return {
+      clientes: window.__CLIENTES__ || [],
+      query: '',
+      cliente: '',
+      fecha: '',
+      messages: [],
+      sources: [],
+      evidence: [],
+      status: '',
+      loading: false,
+      runId: null,
+    };
+  },
+  methods: {
+    esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; },
+    addBot(html) { this.messages.push({ role: 'bot', html }); },
+    async startPersistent(q) {
+      const fd = new FormData();
+      fd.append('query', q); fd.append('cliente', this.cliente); fd.append('fecha_hechos', this.fecha);
+      const resp = await fetch('/api/research/runs', { method: 'POST', body: fd });
+      const run = await resp.json();
+      if (resp.status === 404 || run.detail === 'Not Found') return this.startSync(q);
+      if (!resp.ok || run.error) throw new Error(run.error || run.detail || 'No se pudo iniciar la consulta');
+      return run;
+    },
+    async startSync(q) {
+      const fd = new FormData();
+      fd.append('query', q); fd.append('cliente', this.cliente); fd.append('fecha_hechos', this.fecha);
+      const resp = await fetch('/api/research', { method: 'POST', body: fd });
+      const run = await resp.json();
+      if (!resp.ok || run.error) throw new Error(run.error || 'No se pudo completar la consulta');
+      return run;
+    },
+    async waitForResearch(id) {
+      while (true) {
+        await new Promise(r => setTimeout(r, 1500));
+        const resp = await fetch('/api/research/runs/' + encodeURIComponent(id));
+        const run = await resp.json();
+        if (!resp.ok) return run;
+        this.status = 'Estado: ' + ({ queued: 'en espera', running: 'investigando', completed: 'completa', partial: 'parcial', failed: 'fallida', cancelled: 'cancelada' }[run.status] || run.status) + '.';
+        if (run.status === 'completed' || run.status === 'partial') return run.result;
+        if (run.status === 'failed' || run.status === 'cancelled') return { error: run.error || 'La investigación se detuvo.' };
+      }
+    },
+    renderResult(json) {
+      this.sources = (json.sources || []).filter(s => /^https?:\/\//i.test(s.url || ''));
+      this.evidence = json.evidence || [];
+      let html = '<div class="res-reply">' + this.esc(json.reply || 'No se generó una respuesta.').replace(/\n/g, '<br>') + '</div>';
+      for (const w of (json.warnings || [])) html += '<p class="alert alert-error">' + this.esc(w) + '</p>';
+      this.addBot(html);
+    },
+    async submit() {
+      const q = this.query.trim();
+      if (!q || this.loading) return;
+      this.messages.push({ role: 'user', text: q });
+      this.query = '';
+      this.loading = true;
+      this.status = 'Iniciando investigación…';
+      try {
+        const run = await this.startPersistent(q);
+        this.runId = run.id || null;
+        const res = await this.waitForResearch(run.id);
+        this.loading = false; this.status = '';
+        if (res.error) { this.addBot('<div class="alert alert-error">' + this.esc(res.error) + '</div>'); return; }
+        this.renderResult(res);
+      } catch (e) {
+        this.loading = false; this.status = '';
+        this.addBot('<div class="alert alert-error">' + this.esc(e.message) + '</div>');
+      }
+    },
+  },
+}).mount('#asistente');
+</script>
+{% endblock %}

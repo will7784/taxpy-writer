@@ -1137,6 +1137,15 @@ async def sources_page(request: Request):
 
 # ── Research Agent (Fase 5) ───────────────────────────────────
 
+@app.get("/asistente", response_class=HTMLResponse)
+async def asistente_page(request: Request):
+    """Interfaz moderna (Vue) del asistente de investigación con panel de fuentes."""
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    clientes = list_clientes()
+    return templates.TemplateResponse(request, "asistente.html", {"clientes": clientes})
+
+
 @app.get("/research", response_class=HTMLResponse)
 async def research_page(request: Request):
     if not _is_authenticated(request):

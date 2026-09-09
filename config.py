@@ -198,6 +198,16 @@ MCP_TOKEN = os.getenv("MCP_TOKEN", "")
 # Ruta base del endpoint MCP. El SSE queda en {MCP_MOUNT_PATH}/sse (ej. /mcp/sse).
 MCP_MOUNT_PATH = os.getenv("MCP_MOUNT_PATH", "/mcp")
 
+# ============================================
+# Ingesta automática (webhook tipo n8n) — /api/ingest/{cliente}
+# ============================================
+# Token bearer/X-API-Key para que un flujo externo (n8n, Dropbox, Google Drive)
+# suba documentos de clientes automáticamente. Vacío = abierto (solo dev).
+INGEST_TOKEN = os.getenv("INGEST_TOKEN", "")
+# Si es 1/true/yes, al recibir un documento se dispara el pipeline de Co-Work
+# (OCR + análisis) automáticamente, para que quede consultable.
+INGEST_AUTOPROCESS = os.getenv("INGEST_AUTOPROCESS", "1").strip().lower() in {"1", "true", "yes"}
+
 
 def require_production_secrets() -> None:
     """Evita desplegar el panel con credenciales conocidas o una cookie insegura."""

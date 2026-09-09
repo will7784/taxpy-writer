@@ -925,6 +925,67 @@ async def api_process_cliente(request: Request, cliente: str):
         return JSONResponse({"error": str(e)[:200]}, status_code=400)
 
 
+
+# ── Ingesta automática (webhook tipo n8n / Drive) ──────────────
+@app.post("/api/ingest/{cliente}")
+async def api_ingest(request: Request, cliente: str):
+    """Recibe un documento de un cliente desde un webhook externo (n8n, Drive).
+
+    Acepta el archivo en `material` (multipart) o un JSON con `url` a descargar.
+    Si `auto` != 0, dispara el pipeline de Co-Work (OCR + analisis).
+    Auth: X-API-Key o Bearer con INGEST_TOKEN.
+    """
+    import ingest as ingest_mod
+    if not ingest_mod.check_token(request.headers):
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    from cowork_manager import procesar_entrada_cliente
+    from writer import WriterEngine
+    try:
+        filename, data, url, auto = await _ingest_read_body(request)
+        if data is not None and filename:
+            path = ingest_mod.guardar_entrada(cliente, filename, data)
+        elif url:
+            data = await ingest_mod.fetch_url(url)
+            path = ingest_mod.guardar_entrada(cliente, ingest_mod.filename_from_url(url), data)
+        else:
+            return JSONResponse({"error": "Falta el archivo (material) o la url"}, status_code=400)
+        result: dict = {"ok": True, "cliente": cliente, "filename": path.name}
+        if auto and getattr(config, "INGEST_AUTOPROCESS", True):
+            trabajos = await procesar_entrada_cliente(cliente, llm_client=WriterEngine()._llm)
+            result["procesados"] = [
+                {"tipo": t.tipo, "estado": t.estado, "titulo": t.titulo} for t in trabajos
+            ]
+            result["errores"] = [t.error_msg for t in trabajos if t.estado == "error"]
+        return result
+    except FileNotFoundError as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=404)
+    except FileExistsError as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=409)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+async def _ingest_read_body(request: Request) -> tuple[str, bytes | None, str, int]:
+    """Lee el body de ingesta: multipart (material/url/auto) o JSON."""
+    ct = (request.headers.get("content-type") or "").lower()
+    if "multipart/form-data" in ct:
+        form = await request.form()
+        up = form.get("material") or form.get("file")
+        filename = up.filename if up is not None and getattr(up, "filename", None) else ""
+        data = await up.read() if up is not None and getattr(up, "read", None) else None
+        if up is not None and getattr(up, "close", None) and data is not None:
+            await up.close()
+        url = str(form.get("url", "") or "")
+        auto = int(form.get("auto", 1) or 1)
+        return filename, data, url, auto
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    return (str(payload.get("filename", "") or ""), None,
+            str(payload.get("url", "") or ""), int(payload.get("auto", 1) or 1))
 # ── Expedientes y evidencia (produccion) ──────────────────────
 
 @app.get("/api/cliente/{cliente}/expedientes")

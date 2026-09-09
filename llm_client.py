@@ -21,7 +21,7 @@ from typing import Any, TypeVar
 import config
 from pydantic import BaseModel
 
-from openai import AsyncOpenAI
+from openai import AsyncOpenAI, BadRequestError
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -254,16 +254,33 @@ class LLMClient:
         max_tokens: int,
     ) -> T:
         m = model or self._model
-        response = await self._openai.beta.chat.completions.parse(
+        try:
+            response = await self._openai.beta.chat.completions.parse(
+                model=m,
+                messages=messages,  # type: ignore[arg-type]
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=schema,
+            )
+            parsed = response.choices[0].message.parsed
+            if parsed is not None:
+                return parsed
+        except BadRequestError:
+            pass
+        # Fallback para proveedores OpenAI-compatibles que no soportan
+        # response_format con schema (p. ej. DeepSeek): pedir JSON puro y validarlo.
+        msgs: list[dict[str, str]] = list(messages)
+        if "json" not in " ".join(str(x.get("content", "")) for x in msgs).lower():
+            msgs.insert(0, {"role": "system", "content": "Responde solo con un objeto JSON valido."})
+        response = await self._openai.chat.completions.create(
             model=m,
-            messages=messages,  # type: ignore[arg-type]
+            messages=msgs,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=max_tokens,
-            response_format=schema,
+            response_format={"type": "json_object"},
         )
-        parsed = response.choices[0].message.parsed
-        if parsed is None:
-            raise ValueError(f"No se obtuvo salida estructurada valida para {schema.__name__}")
+        text = response.choices[0].message.content or ""
+        parsed = schema.model_validate_json(text)
         return parsed
 
     async def _gemini_structured(

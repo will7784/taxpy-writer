@@ -23,6 +23,11 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 # Investigación puede usar un proveedor distinto del chat habitual.
 RESEARCH_LLM_PROVIDER = os.getenv("RESEARCH_LLM_PROVIDER", "").strip().lower()
+# Proveedor LLM por defecto para el chat/agente (kimi | gemini | deepseek | openai | custom).
+# 'deepseek' es el más barato y el DEFAULT. Si no está configurado o es inválido, cae a la
+# cadena clásica (kimi > gemini > deepseek > openai > custom). Cambia a 'kimi'/'gemini' si
+# necesitas los 1M de contexto para leyes completas en el chat general.
+DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "deepseek").strip().lower()
 
 # Google Gemini (recomendado: 1M contexto, leyes completas)
 # =================================================================
@@ -38,10 +43,14 @@ KIMI_BASE_URL = os.getenv("KIMI_BASE_URL", "https://api.moonshot.ai/v1")
 KIMI_MODEL = os.getenv("KIMI_MODEL", "kimi-k2-0905-preview")
 KIMI_MAX_CONTEXT = int(os.getenv("KIMI_MAX_CONTEXT", "1000000"))
 
-# DeepSeek (128K contexto, ~$0.14/M input tokens, OpenAI-compatible)
+# DeepSeek (API OpenAI-compatible, base https://api.deepseek.com)
 # =================================================================
+# Modelos V4: deepseek-v4-flash (barato/rápido, default) y deepseek-v4-pro (complejo).
+# Precios variables (hay descuento off-peak); ver https://api-docs.deepseek.com/quick_start/pricing
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-chat")
+DEEPSEEK_MODEL = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+DEEPSEEK_MODEL_PRO = os.getenv("DEEPSEEK_MODEL_PRO", "deepseek-v4-pro")
+DEEPSEEK_MAX_CONTEXT = int(os.getenv("DEEPSEEK_MAX_CONTEXT", "128000"))
 
 # Cualquier API OpenAI-compatible (Qwen, Moonshot, Zhipu, etc.)
 # =================================================================

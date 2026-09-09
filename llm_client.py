@@ -1,12 +1,12 @@
 """
 Cliente LLM multi-proveedor: Kimi, Gemini, DeepSeek, OpenAI, o cualquier API OpenAI-compatible.
 
-Prioridad:
+Prioridad (default configurable via DEFAULT_LLM_PROVIDER):
+  0. DeepSeek V4 Flash (por defecto, barato) / V4 Pro (complejo) — OpenAI-compatible
   1. Kimi/Moonshot (1M contexto) — ideal para leyes completas y modo estudio
   2. Gemini (1M contexto) — ideal para leyes completas
-  3. DeepSeek (128K contexto) — barato, OpenAI-compatible
-  4. OpenAI (128K contexto) — fallback clasico
-  5. Custom (configurable) — Qwen, Moonshot, Zhipu, etc.
+  3. OpenAI (128K contexto) — fallback clasico
+  4. Custom (configurable) — Qwen, Moonshot, Zhipu, etc.
 
 Cada provider expone su max_context para que el prompt builder ajuste.
 """
@@ -57,8 +57,23 @@ class LLMClient:
         self._model: str = "gpt-4o"
         self._max_context: int = 128_000
 
-        # Kimi / Moonshot (1M contexto, OpenAI-compatible)
-        if provider in (None, "kimi") and getattr(config, "KIMI_API_KEY", None):
+        # Orden de intento de proveedores.
+        # - Si se pasa `provider`, se intenta ese; si no está configurado, error.
+        # - Si no, se usa DEFAULT_LLM_PROVIDER primero (por defecto 'deepseek', el
+        #   más barato) y luego la cadena clásica (kimi > gemini > deepseek > openai > custom).
+        default = (getattr(config, "DEFAULT_LLM_PROVIDER", "") or "").strip().lower()
+        order = [provider] if provider else [p for p in (default, "kimi", "gemini", "deepseek", "openai", "custom") if p]
+        for p in dict.fromkeys(order):  # dedupe manteniendo el orden
+            if self._try_configure(p):
+                return
+        raise RuntimeError(
+            "Configura al menos un proveedor LLM: KIMI_API_KEY, GEMINI_API_KEY, "
+            "DEEPSEEK_API_KEY, OPENAI_API_KEY, o CUSTOM_LLM_API_KEY + CUSTOM_LLM_BASE_URL."
+        )
+
+    def _try_configure(self, provider: str) -> bool:
+        """Configura el proveedor indicado si hay API key. True si se configuró."""
+        if provider == "kimi" and getattr(config, "KIMI_API_KEY", None):
             self._openai = AsyncOpenAI(
                 api_key=config.KIMI_API_KEY,
                 http_client=httpx.AsyncClient(verify=tls_context(), timeout=90),
@@ -67,32 +82,32 @@ class LLMClient:
             self._provider = "kimi"
             self._model = getattr(config, "KIMI_MODEL", "kimi-k2-0905-preview")
             self._max_context = getattr(config, "KIMI_MAX_CONTEXT", 1_000_000)
-        # Gemini (1M contexto)
-        elif provider in (None, "gemini") and getattr(config, "GEMINI_API_KEY", None):
+            return True
+        if provider == "gemini" and getattr(config, "GEMINI_API_KEY", None):
             from google import genai as genai_client
             self._gemini = genai_client.Client(api_key=config.GEMINI_API_KEY)
             self._provider = "gemini"
             self._model = getattr(config, "GEMINI_MODEL", "gemini-2.5-flash")
             self._max_context = getattr(config, "GEMINI_MAX_CONTEXT", 1_000_000)
-        # DeepSeek (OpenAI-compatible)
-        elif provider in (None, "deepseek") and getattr(config, "DEEPSEEK_API_KEY", None):
+            return True
+        if provider == "deepseek" and getattr(config, "DEEPSEEK_API_KEY", None):
             self._openai = AsyncOpenAI(
                 api_key=config.DEEPSEEK_API_KEY,
                 http_client=httpx.AsyncClient(verify=tls_context(), timeout=90),
                 base_url="https://api.deepseek.com",
             )
             self._provider = "deepseek"
-            self._model = getattr(config, "DEEPSEEK_MODEL", "deepseek-chat")
-            self._max_context = 128_000
-        # OpenAI
-        elif provider in (None, "openai") and config.OPENAI_API_KEY:
+            self._model = getattr(config, "DEEPSEEK_MODEL", "deepseek-v4-flash")
+            self._max_context = getattr(config, "DEEPSEEK_MAX_CONTEXT", 128_000)
+            return True
+        if provider == "openai" and config.OPENAI_API_KEY:
             self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY,
                 http_client=httpx.AsyncClient(verify=tls_context(), timeout=90))
             self._provider = "openai"
             self._model = config.OPENAI_MODEL
             self._max_context = 128_000
-        # Custom OpenAI-compatible (Qwen, Moonshot, Zhipu, etc.)
-        elif provider in (None, "custom") and getattr(config, "CUSTOM_LLM_API_KEY", None) and getattr(config, "CUSTOM_LLM_BASE_URL", None):
+            return True
+        if provider == "custom" and getattr(config, "CUSTOM_LLM_API_KEY", None) and getattr(config, "CUSTOM_LLM_BASE_URL", None):
             self._openai = AsyncOpenAI(
                 api_key=config.CUSTOM_LLM_API_KEY,
                 http_client=httpx.AsyncClient(verify=tls_context(), timeout=90),
@@ -101,12 +116,8 @@ class LLMClient:
             self._provider = "custom"
             self._model = getattr(config, "CUSTOM_LLM_MODEL", "default")
             self._max_context = getattr(config, "CUSTOM_LLM_MAX_CONTEXT", 128_000)
-        else:
-            raise RuntimeError(
-                "Configura al menos un proveedor LLM: KIMI_API_KEY, GEMINI_API_KEY, "
-                "DEEPSEEK_API_KEY, OPENAI_API_KEY, o CUSTOM_LLM_API_KEY + CUSTOM_LLM_BASE_URL."
-            )
-
+            return True
+        return False
     @property
     def provider(self) -> str:
         return self._provider

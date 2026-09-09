@@ -216,6 +216,17 @@ def escribir_informe(cliente: str, titulo: str, contenido: str) -> str:
         return f"Error al escribir el informe: {exc}"
 
 
+@mcp.tool()
+async def publicar_notion(titulo: str, contenido: str) -> str:
+    """Publica un informe en Notion y devuelve la URL de la página."""
+    from notion_writer import publish_page
+    try:
+        url = await publish_page(titulo, contenido)
+        return url or "Publicado en Notion (no se obtuvo URL)."
+    except Exception as exc:
+        return f"Error al publicar en Notion: {exc}"
+
+
 # ── Autenticación (bearer token) ───────────────────────────────────
 class _BearerAuthMiddleware:
     """ASGI middleware que exige ``Authorization: Bearer <MCP_TOKEN>``."""

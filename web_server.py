@@ -986,6 +986,32 @@ async def _ingest_read_body(request: Request) -> tuple[str, bytes | None, str, i
         payload = {}
     return (str(payload.get("filename", "") or ""), None,
             str(payload.get("url", "") or ""), int(payload.get("auto", 1) or 1))
+
+
+# ── Notion (salida de informes) ────────────────────────────────
+@app.post("/api/notion/publish")
+async def api_notion_publish(request: Request):
+    """Publica un informe en Notion. Body JSON: {titulo, contenido}.
+
+    Auth: X-API-Key o Bearer con INGEST_TOKEN.
+    """
+    import ingest as ingest_mod
+    if not ingest_mod.check_token(request.headers):
+        return JSONResponse({"error": "No autorizado"}, status_code=401)
+    from notion_writer import publish_page
+    try:
+        payload = await request.json()
+    except Exception:
+        return JSONResponse({"error": "Body JSON inválido"}, status_code=400)
+    titulo = str(payload.get("titulo", "") or "").strip()
+    contenido = str(payload.get("contenido", "") or "")
+    if not titulo or not contenido:
+        return JSONResponse({"error": "Faltan titulo y/o contenido"}, status_code=400)
+    try:
+        url = await publish_page(titulo, contenido)
+        return {"ok": True, "url": url}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
 # ── Expedientes y evidencia (produccion) ──────────────────────
 
 @app.get("/api/cliente/{cliente}/expedientes")

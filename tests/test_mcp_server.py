@@ -18,7 +18,7 @@ import mcp_server
 
 EXPECTED_TOOLS = {
     "listar_clientes", "listar_casos", "procesar_caso", "buscar_jurisprudencia",
-    "buscar_notas", "obtener_norma", "investigar", "escribir_informe",
+    "buscar_notas", "obtener_norma", "investigar", "escribir_informe", "publicar_notion",
 }
 
 

@@ -208,6 +208,15 @@ INGEST_TOKEN = os.getenv("INGEST_TOKEN", "")
 # (OCR + análisis) automáticamente, para que quede consultable.
 INGEST_AUTOPROCESS = os.getenv("INGEST_AUTOPROCESS", "1").strip().lower() in {"1", "true", "yes"}
 
+# ============================================
+# Notion (salida de informes) — Fase 4
+# ============================================
+# Token de integración interna de Notion ("ntn_..." o "secret_...") y el id de la
+# base de datos donde se publican los informes. Propiedad de título configurable.
+NOTION_API_KEY = os.getenv("NOTION_API_KEY", "")
+NOTION_DATABASE_ID = os.getenv("NOTION_DATABASE_ID", "")
+NOTION_TITLE_PROPERTY = os.getenv("NOTION_TITLE_PROPERTY", "Name")
+
 
 def require_production_secrets() -> None:
     """Evita desplegar el panel con credenciales conocidas o una cookie insegura."""

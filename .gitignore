@@ -65,3 +65,7 @@ Thumbs.db
 git_original/
 *.docx
 ~
+
+# Carpetas temporales de pruebas/scripts
+.test_tmp/
+.test_panel_*/

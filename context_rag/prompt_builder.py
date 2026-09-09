@@ -82,7 +82,9 @@ def _build_system_prompt(base_agent_md: str | None = None, query: str = "") -> s
         "2. El numero de articulo, inciso y numeral debe ser EXACTO.\n"
         "3. NO inventes articulos ni uses conocimiento externo.\n"
         "4. Cuando cites, usa el formato: '(Art. XX, [Nombre de la Ley])'.\n"
-        "5. Responde en tono conversacional, sin markdown, max 250 palabras."
+        "5. Un documento marcado como proyecto_en_tramitacion NO es derecho vigente: "
+        "identificalo como proyecto y no atribuyas efectos actuales.\n"
+        "6. Responde en tono conversacional, sin markdown, max 250 palabras."
     )
 
     if SKILLS_ENABLED and query:
@@ -374,7 +376,9 @@ def build_context(
         if remaining <= 10_000:
             break
 
-        text, used, trimmed = _smart_trim_law(law, query, remaining)
+        # Reservar presupuesto equitativo: antes el primer cuerpo legal podia
+        # consumir toda la ventana y excluir los restantes.
+        text, used, trimmed = _smart_trim_law(law, query, min(remaining, tokens_per_law))
         law_texts.append(text)
         loaded_laws.append(law)
         total_used += used

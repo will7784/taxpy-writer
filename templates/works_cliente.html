@@ -2,6 +2,18 @@
 {% block title %}Trabajo: {{ cliente }}{% endblock %}
 {% block content %}
 <h1>Co-Work: {{ cliente }}</h1>
+<div class="card full-width">
+    <h2>Documentación de tu equipo</h2>
+    <p>Selecciona tu carpeta CoWork o documentos individuales. Se copiarán al cliente; los originales permanecerán en tu equipo.</p>
+    <p>Formatos: PDF, DOCX, TXT, MD y fotos o escaneos (PNG/JPG/...). Máximo 25 MB por archivo. Las imágenes y PDFs escaneados se procesan con OCR.</p>
+    <button class="btn btn-primary" onclick="document.getElementById('folder-input').click()">Seleccionar carpeta CoWork</button>
+    <button class="btn btn-outline" onclick="document.getElementById('files-input').click()">Seleccionar archivos</button>
+    <a class="btn btn-outline" href="/research?cliente={{ cliente | urlencode }}">Investigar este cliente (biblioteca + expediente)</a>
+
+    <input id="folder-input" type="file" webkitdirectory multiple hidden onchange="uploadDocuments(this)">
+    <input id="files-input" type="file" accept=".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.tiff,.tif,.bmp" multiple hidden onchange="uploadDocuments(this)">
+    <p id="upload-status" role="status" style="white-space:pre-wrap;"></p>
+</div>
 
 <div class="files-breadcrumb">
     <a href="/works">Trabajos</a> <span class="breadcrumb-sep">/</span> <strong>{{ cliente }}</strong>
@@ -85,19 +97,48 @@
 </div>
 
 <script>
+const clientName = {{ cliente|tojson }};
+async function uploadDocuments(input) {
+    const status = document.getElementById('upload-status');
+    const all = Array.from(input.files);
+    const files = all.filter(f => /\.(pdf|docx|txt|md|png|jpg|jpeg|webp|tiff|tif|bmp)$/i.test(f.name));
+    const errors = [];
+    let uploaded = 0;
+    for (const file of files) {
+        status.textContent = `Cargando ${uploaded + errors.length + 1} de ${files.length}: ${file.name}`;
+        try {
+            if (file.size > 25 * 1024 * 1024) throw new Error('Supera 25 MB');
+            const data = new FormData();
+            data.append('material', file, file.webkitRelativePath || file.name);
+            const response = await fetch('/api/cliente/' + encodeURIComponent(clientName) + '/entrada/upload', {method: 'POST', body: data});
+            const result = await response.json();
+            if (!response.ok || !result.ok) throw new Error(result.error || 'No se pudo cargar');
+            uploaded++;
+        } catch (error) { errors.push(file.name + ': ' + error.message); }
+    }
+    status.textContent = `${uploaded} documento(s) cargado(s). ${all.length - files.length} archivo(s) omitido(s) por formato.\n` + errors.join('\n');
+    if (uploaded) {
+        const link = document.createElement('a');
+        link.href = location.pathname;
+        link.textContent = 'Ver entrada y procesar documentos';
+        status.appendChild(document.createElement('br'));
+        status.appendChild(link);
+    }
+    input.value = '';
+}
 async function processCliente() {
     const btn = document.getElementById('process-btn');
     const result = document.getElementById('process-result');
     btn.disabled = true;
     result.innerHTML = '<span style="color: var(--text-muted);">Procesando...</span>';
     try {
-        const resp = await fetch('/api/cliente/' + encodeURIComponent('{{ cliente }}') + '/process', { method: 'POST' });
+        const resp = await fetch('/api/cliente/' + encodeURIComponent(clientName) + '/process', { method: 'POST' });
         const json = await resp.json();
         if (json.ok) {
             result.innerHTML = '<div class="alert alert-success">Trabajos creados: ' + json.trabajos_creados + '</div>';
             setTimeout(() => location.reload(), 1000);
         } else {
-            result.innerHTML = '<div class="alert alert-error">Error: ' + (json.error || 'desconocido') + '</div>';
+            result.textContent = 'Error: ' + (json.error || 'desconocido');
         }
     } catch (err) {
         result.innerHTML = '<div class="alert alert-error">Error de conexion: ' + err.message + '</div>';

@@ -28,11 +28,15 @@ CHILE = JurisdictionConfig(
             "short": "CT",
         },
     },
-    official_domains=["bcn.cl", "sii.cl"],
+    official_domains=[
+        "bcn.cl", "sii.cl", "uaf.cl", "tta.cl", "pjud.cl", "scj.cl", "cmfchile.cl",
+        "fiscaliadechile.cl", "diariooficial.interior.gob.cl",
+    ],
     currency_units={
         "UF": "~$40.000 CLP",
         "UTA": "~$835.000 CLP",
         "UTM": "~$69.583 CLP",
     },
-    notes="Corpus completo: DL-824, DL-825, DL-830 + jurisprudencia SII (scrapers ACJ y circulares).",
+    notes=("Núcleo local: DL-824, DL-825 y DL-830. Biblioteca oficial ampliable: "
+           "BCN/LeyChile, SII, UAF, TTA, Poder Judicial, SCJ, CMF y Ministerio Público."),
 )

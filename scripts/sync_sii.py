@@ -75,62 +75,60 @@ async def sync_acj(full: bool = False) -> dict:
         total_pron = 0
         total_new = 0
 
-        # Por ahora solo procesamos el cuerpo normativo 2 (Código Tributario)
-        target_cuerpo = next((c for c in cuerpos if c.get("id") == 2), None)
-        if not target_cuerpo:
-            console.print("[yellow]⚠️ No se encontró Código Tributario (id=2)[/yellow]")
+        target_cuerpos = [c for c in cuerpos if c.get("id") in {1, 2, 3}]
+        if not target_cuerpos:
+            console.print("[yellow]⚠️ No se encontraron los cuerpos Código Tributario, LIR o IVA[/yellow]")
             return {"total": 0, "new": 0}
 
-        # Listar artículos
-        articulos = await scraper.find_articulos(2)
-        console.print(f"  Artículos encontrados: {len(articulos)}")
-
-        for articulo in articulos:
-            art_id = articulo.get("id")
-            art_nombre = str(articulo.get("nombre", art_id))
-
-            if not full and str(art_id) in state["articulos"]:
-                continue
-
-            # Buscar pronunciamientos
-            pronunciamientos = await scraper.find_pronunciamientos(art_id, cuerpo_normativo_id=2)
-
-            for pron in pronunciamientos:
-                pron_id = pron.get("id")
-                if not pron_id:
+        # Aun en modo incremental se vuelve a consultar cada artículo: un fallo
+        # nuevo puede asociarse a un artículo ya visto en una ejecución anterior.
+        for cuerpo in target_cuerpos:
+            cuerpo_id = cuerpo.get("id")
+            cuerpo_nombre = str(cuerpo.get("nombre", cuerpo_id))
+            articulos = await scraper.find_articulos(cuerpo_id)
+            console.print(f"  {cuerpo_nombre}: {len(articulos)} artículos")
+            for articulo in articulos:
+                art_id = articulo.get("id")
+                art_nombre = str(articulo.get("nombre", art_id))
+                if not art_id:
                     continue
 
-                # Verificar si ya existe
-                pron_key = f"{art_id}_{pron_id}"
-                if not full and pron_key in state["pronunciamientos"]:
-                    continue
+                pronunciamientos = await scraper.find_pronunciamientos(art_id, cuerpo_normativo_id=cuerpo_id)
 
-                # Obtener detalle completo
-                full_pron = await scraper.get_full_pronunciamiento(pron_id)
-                if not full_pron:
-                    continue
+                for pron in pronunciamientos:
+                    pron_id = pron.get("id")
+                    if not pron_id:
+                        continue
 
-                # Guardar como .md
-                md_content = scraper.pron_to_md(full_pron, art_nombre)
-                art_dir = scraper.output_dir / f"art_{art_nombre.replace(' ', '_')}"
-                art_dir.mkdir(parents=True, exist_ok=True)
-                md_path = art_dir / f"sii_pron_{pron_id}.md"
-                md_path.write_text(md_content, encoding="utf-8")
+                    # Identidad compuesta evita colisiones entre cuerpos.
+                    pron_key = f"{cuerpo_id}_{art_id}_{pron_id}"
+                    if not full and pron_key in state["pronunciamientos"]:
+                        continue
 
-                total_pron += 1
-                if pron_key not in state["pronunciamientos"]:
-                    total_new += 1
+                    full_pron = await scraper.get_full_pronunciamiento(pron_id)
+                    if not full_pron:
+                        continue
 
-                state["pronunciamientos"][pron_key] = {
-                    "pron_id": pron_id,
-                    "articulo_id": art_id,
+                    md_content = scraper.pron_to_md(full_pron, art_nombre, cuerpo_normativo_id=cuerpo_id,
+                                                      cuerpo_nombre=cuerpo_nombre)
+                    art_dir = scraper.output_dir / f"cuerpo_{cuerpo_id}" / f"art_{art_nombre.replace(' ', '_')}"
+                    art_dir.mkdir(parents=True, exist_ok=True)
+                    md_path = art_dir / f"sii_pron_{pron_id}.md"
+                    md_path.write_text(md_content, encoding="utf-8")
+
+                    total_pron += 1
+                    if pron_key not in state["pronunciamientos"]:
+                        total_new += 1
+
+                    state["pronunciamientos"][pron_key] = {
+                        "pron_id": pron_id, "articulo_id": art_id, "cuerpo_normativo_id": cuerpo_id,
+                        "fecha_sync": datetime.utcnow().isoformat(),
+                    }
+
+                state["articulos"][f"{cuerpo_id}_{art_id}"] = {
+                    "nombre": art_nombre, "cuerpo_normativo_id": cuerpo_id,
                     "fecha_sync": datetime.utcnow().isoformat(),
                 }
-
-            state["articulos"][str(art_id)] = {
-                "nombre": art_nombre,
-                "fecha_sync": datetime.utcnow().isoformat(),
-            }
 
         state["last_sync"] = datetime.utcnow().isoformat()
         save_sync_state(state)

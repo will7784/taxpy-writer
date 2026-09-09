@@ -183,3 +183,58 @@ Esta es la regla más importante de ClaudIA. El incumplimiento es un error grave
 
 ### 🔒 Regla de oro:
 > **Si no está en las fuentes, NO existe para efectos de esta respuesta.**
+
+## 10. Scraping de jurisprudencia SII (fallos TTA / oficios / circulares)
+
+### ✅ Resultado de la prueba de geobloqueo (VERIFICADO 2026-08-30)
+- El usuario opera desde **Colombia**. Se probó la API ACJ del SII directamente desde acá y
+  **NO hay bloqueo geográfico**: responde HTTP 200 con datos reales.
+- La dificultad anterior ("no puedo acceder al contenido normativo") se debió a: (1) la página
+  `normaInternet` es una SPA AngularJS que solo renderiza JS en navegador (curl devuelve shell vacío),
+  y (2) el formato de request del scraper estaba mal. NO usar VPN/proxy salvo que una futura prueba
+  sí muestre bloqueo. Si una request falla, primero revisar formato/endpoint, no geobloqueo.
+
+### Cómo replicar los fallos (API ACJ del SII)
+La app "Administrador de Contenido Normativo" es AngularJS y consume un backend JSON-RPC.
+El mapeo completo está reverse-engineered en `sii_acjui_main.js` (función `ServiceHTTP`).
+
+**Base:** `https://www4.sii.cl/acjui/services/data/internetService/`
+
+| Método (namespace) | Path | Formato body |
+|---|---|---|
+| listTiposInstancia | `tipos-instancia` | **PLANO** (sin `metaData` ni `data`) |
+| listCuerposNormativos | `cuerpos-normativos` | **PLANO** |
+| findArticulos | `find-articulos` | envuelto `{metaData, data:{id}}` |
+| findPronunciamientos | `find-pronunciamientos` | envuelto `{metaData, data:{searchForm}}` |
+| getFullPronunciamiento | `pronunciamientos/get-full` | envuelto `{metaData, data:{id}}` |
+| findTipoCodigo | `tipos-codigo/filter` | envuelto `{metaData, data:{conditions}}` |
+
+**Formato PLANO** (métodos `list*`, probado OK):
+```json
+{ "namespace": "cl.sii.sdi.lob.juridica.acj.data.impl.InternetApplicationService/<metodo>",
+  "conversationId": "1", "transactionId": "<cualquier string>", "page": null }
+```
+**Formato ENVUELTO** (métodos `find*`/`get*`, probado OK):
+```json
+{ "metaData": { "namespace": "...InternetApplicationService/<metodo>", "conversationId": "1",
+                "transactionId": "<string>", "page": null },
+  "data": { ... } }
+```
+- **NO se requiere sesión/cookie `TOKEN`**: `conversationId` puede ser cualquier string (se probó con `"1"`).
+- El backend es JBoss/RESTEasy: si mandas `metaData` a un `list*`, responde error 400
+  `Unrecognized field "metaData" (RequestMetaData)`.
+
+### Estructura de datos clave (para replicar la ventaja de la competencia)
+- **IDs de cuerpos normativos**: `1` = Código Tributario, `2` = LIR, `3` = IVA (Ley Impuesto a las
+  Ventas y Servicios). Hay ~95 cuerpos listados en `listCuerposNormativos`.
+- `listTiposInstancia` en la app pública devuelve **solo 1 tipo**: "Jurisprudencia Judicial"
+  (`id=1`, `administrativa=false`). Los oficios/circulares (instancia **administrativa**) son
+  **intranet-only** (requieren credenciales SII); para esos usar el scraper web de circulares
+  (`sii_circulares.py`) en vez del ACJ.
+- Cada fallo judicial (`getFullPronunciamiento`) trae: `decision.nombre`, `resultado.texto`, `ruc`,
+  `partes`, `sentencia`, `tipoCodigo.nombre` + `codigoPronunciamiento` (= RIT), `instancia.nombre`
+  (tribunal), `fecha`.
+- `findArticulos` devuelve artículos con `numero`, `adverbio` (letras A-H, bis/ter/quáter), `nombre`
+  (ej. "14 D"), y `tituloBO.cuerpoNormativo.nombre` (la ley).
+- `pronunciamientosArticulos[]` mapea cada fallo → `articulo` → la ley.
+- El texto/sentencia se obtiene vía `urlDocumento` o `acjui/services/data/intranetService/pronunciamiento/documento?id_file=...`.

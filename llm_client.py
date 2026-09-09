@@ -14,6 +14,8 @@ Cada provider expone su max_context para que el prompt builder ajuste.
 from __future__ import annotations
 
 import asyncio
+from http_security import tls_context
+import httpx
 from typing import Any, TypeVar
 
 import config
@@ -33,10 +35,22 @@ CONTEXT_WINDOWS: dict[str, int] = {
 }
 
 
+class LLMOutputTruncatedError(RuntimeError):
+    """El proveedor terminó por longitud; nunca representa un JSON completo."""
+
+    def __init__(self, *, provider: str, model: str, max_tokens: int, chars: int):
+        self.provider = provider
+        self.model = model
+        self.max_tokens = max_tokens
+        self.chars = chars
+        super().__init__(f"Salida incompleta de {provider}/{model}: "
+                         f"límite de {max_tokens} tokens, {chars} caracteres recibidos.")
+
+
 class LLMClient:
     """Wrapper unificado para llamadas a LLM."""
 
-    def __init__(self) -> None:
+    def __init__(self, provider: str | None = None) -> None:
         self._provider: str = "openai"
         self._openai: AsyncOpenAI | None = None
         self._gemini: Any = None
@@ -44,40 +58,44 @@ class LLMClient:
         self._max_context: int = 128_000
 
         # Kimi / Moonshot (1M contexto, OpenAI-compatible)
-        if getattr(config, "KIMI_API_KEY", None):
+        if provider in (None, "kimi") and getattr(config, "KIMI_API_KEY", None):
             self._openai = AsyncOpenAI(
                 api_key=config.KIMI_API_KEY,
+                http_client=httpx.AsyncClient(verify=tls_context(), timeout=90),
                 base_url=getattr(config, "KIMI_BASE_URL", "https://api.moonshot.ai/v1"),
             )
             self._provider = "kimi"
             self._model = getattr(config, "KIMI_MODEL", "kimi-k2-0905-preview")
             self._max_context = getattr(config, "KIMI_MAX_CONTEXT", 1_000_000)
         # Gemini (1M contexto)
-        elif getattr(config, "GEMINI_API_KEY", None):
+        elif provider in (None, "gemini") and getattr(config, "GEMINI_API_KEY", None):
             from google import genai as genai_client
             self._gemini = genai_client.Client(api_key=config.GEMINI_API_KEY)
             self._provider = "gemini"
-            self._model = "gemini-1.5-pro-latest"
-            self._max_context = 900_000
+            self._model = getattr(config, "GEMINI_MODEL", "gemini-2.5-flash")
+            self._max_context = getattr(config, "GEMINI_MAX_CONTEXT", 1_000_000)
         # DeepSeek (OpenAI-compatible)
-        elif getattr(config, "DEEPSEEK_API_KEY", None):
+        elif provider in (None, "deepseek") and getattr(config, "DEEPSEEK_API_KEY", None):
             self._openai = AsyncOpenAI(
                 api_key=config.DEEPSEEK_API_KEY,
+                http_client=httpx.AsyncClient(verify=tls_context(), timeout=90),
                 base_url="https://api.deepseek.com",
             )
             self._provider = "deepseek"
             self._model = getattr(config, "DEEPSEEK_MODEL", "deepseek-chat")
             self._max_context = 128_000
         # OpenAI
-        elif config.OPENAI_API_KEY:
-            self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY)
+        elif provider in (None, "openai") and config.OPENAI_API_KEY:
+            self._openai = AsyncOpenAI(api_key=config.OPENAI_API_KEY,
+                http_client=httpx.AsyncClient(verify=tls_context(), timeout=90))
             self._provider = "openai"
             self._model = config.OPENAI_MODEL
             self._max_context = 128_000
         # Custom OpenAI-compatible (Qwen, Moonshot, Zhipu, etc.)
-        elif getattr(config, "CUSTOM_LLM_API_KEY", None) and getattr(config, "CUSTOM_LLM_BASE_URL", None):
+        elif provider in (None, "custom") and getattr(config, "CUSTOM_LLM_API_KEY", None) and getattr(config, "CUSTOM_LLM_BASE_URL", None):
             self._openai = AsyncOpenAI(
                 api_key=config.CUSTOM_LLM_API_KEY,
+                http_client=httpx.AsyncClient(verify=tls_context(), timeout=90),
                 base_url=config.CUSTOM_LLM_BASE_URL,
             )
             self._provider = "custom"
@@ -92,6 +110,12 @@ class LLMClient:
     @property
     def provider(self) -> str:
         return self._provider
+
+    async def aclose(self) -> None:
+        if self._openai:
+            await self._openai.close()
+        if self._gemini:
+            await asyncio.to_thread(self._gemini.close)
 
     @property
     def model(self) -> str:
@@ -108,11 +132,14 @@ class LLMClient:
         messages: list[dict[str, str]],
         temperature: float = 0.1,
         max_tokens: int = 2000,
+        json_mode: bool = False,
+        timeout: float = 90,
     ) -> str:
         if self._provider == "gemini" and self._gemini:
-            return await self._gemini_chat(model, messages, temperature, max_tokens)
+            return await self._gemini_chat(model, messages, temperature, max_tokens, json_mode=json_mode)
         if self._openai:
-            return await self._openai_chat(model, messages, temperature, max_tokens)
+            return await self._openai_chat(model, messages, temperature, max_tokens,
+                                           json_mode=json_mode, timeout=timeout)
         raise RuntimeError("Ningun proveedor LLM esta disponible.")
 
     async def _openai_chat(
@@ -121,15 +148,26 @@ class LLMClient:
         messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
+        *,
+        json_mode: bool = False,
+        timeout: float = 90,
     ) -> str:
         m = model or self._model
+        options = {"response_format": {"type": "json_object"}} if json_mode else {}
         response = await self._openai.chat.completions.create(
             model=m,
             messages=messages,  # type: ignore[arg-type]
             temperature=temperature,
             max_tokens=max_tokens,
+            timeout=timeout,
+            **options,
         )
-        return response.choices[0].message.content or ""
+        choice = response.choices[0]
+        text = choice.message.content or ""
+        if json_mode and choice.finish_reason == "length":
+            raise LLMOutputTruncatedError(provider=self._provider, model=m,
+                                          max_tokens=max_tokens, chars=len(text))
+        return text
 
     @staticmethod
     def _split_gemini_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
@@ -152,15 +190,19 @@ class LLMClient:
         messages: list[dict[str, str]],
         temperature: float,
         max_tokens: int,
+        *,
+        json_mode: bool = False,
     ) -> str:
         from google.genai import types as genai_types
         m = model or self._model
         system_instruction, contents = self._split_gemini_messages(messages)
 
+        options = {"response_mime_type": "application/json"} if json_mode else {}
         gen_config = genai_types.GenerateContentConfig(
             system_instruction=system_instruction or None,
             temperature=temperature,
             max_output_tokens=max_tokens,
+            **options,
         )
         response = await asyncio.to_thread(
             self._gemini.models.generate_content,
@@ -168,7 +210,14 @@ class LLMClient:
             contents=contents,
             config=gen_config,
         )
-        return response.text or ""
+        text = response.text or ""
+        candidates = response.candidates or []
+        if json_mode and candidates:
+            reason = candidates[0].finish_reason
+            if getattr(reason, "name", reason) == "MAX_TOKENS":
+                raise LLMOutputTruncatedError(provider=self._provider, model=m,
+                                              max_tokens=max_tokens, chars=len(text))
+        return text
 
     async def chat_completion_structured(
         self,

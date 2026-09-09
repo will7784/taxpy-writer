@@ -14,6 +14,8 @@ import hashlib
 import io
 import json
 import logging
+import shutil
+import asyncio
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -95,6 +97,22 @@ async def _list_notebooks_from_api() -> list[dict]:
 app = FastAPI(title="Impuestia Admin")
 
 
+@app.on_event("startup")
+async def start_official_monitor() -> None:
+    config.require_production_secrets()
+    from official_scheduler import run_daily_monitor
+    from research_runs import research_runs
+    app.state.official_monitor = asyncio.create_task(run_daily_monitor())
+    await research_runs.recover()
+
+
+@app.on_event("shutdown")
+async def stop_official_monitor() -> None:
+    task = getattr(app.state, "official_monitor", None)
+    if task:
+        task.cancel()
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled error: %s", exc)
@@ -134,7 +152,7 @@ async def login_page(request: Request, error: Optional[str] = None):
 
 @app.post("/login")
 async def login_post(request: Request, username: str = Form(...), password: str = Form(...)):
-    if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
+    if ADMIN_USERNAME and ADMIN_PASSWORD and SESSION_SECRET and username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
         request.session["authenticated"] = True
         request.session["username"] = username
         return RedirectResponse(url="/dashboard", status_code=status.HTTP_302_FOUND)
@@ -834,6 +852,45 @@ async def api_delete_skill(request: Request, name: str):
 
 # ── Co-Work por Cliente (Fase 4) ───────────────────────────
 
+@app.post("/api/cliente/{cliente}/entrada/upload")
+async def api_cowork_upload(request: Request, cliente: str, material: UploadFile):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    client_dir = get_cliente_dir(cliente)
+    if not client_dir.is_dir():
+        return JSONResponse({"error": "Cliente no encontrado"}, status_code=404)
+    # El navegador envía rutas relativas: nunca se aceptan rutas del servidor.
+    parts = (material.filename or "").replace("\\", "/").split("/")
+    if any(not p or p in {".", ".."} or any(c in p for c in ':<>"|?*') for p in parts):
+        return JSONResponse({"error": "Nombre de documento inválido"}, status_code=400)
+    name = "__".join(parts)
+    _cowork_exts = {".pdf", ".docx", ".txt", ".md", ".png", ".jpg", ".jpeg", ".webp", ".tiff", ".tif", ".bmp"}
+
+    if Path(name).suffix.lower() not in _cowork_exts:
+        return JSONResponse({"error": "Formato no admitido. Usa PDF, DOCX, TXT, MD o una imagen (PNG/JPG/...)."}, status_code=400)
+    entrada = client_dir / "entrada"
+    entrada.mkdir(exist_ok=True)
+    target = entrada / name
+    created = False
+    try:
+        with target.open("xb") as output:
+            created = True
+            size = 0
+            while chunk := await material.read(1024 * 1024):
+                size += len(chunk)
+                if size > 25 * 1024 * 1024:
+                    raise ValueError("El documento supera el límite de 25 MB.")
+                output.write(chunk)
+        return {"ok": True, "filename": name}
+    except FileExistsError:
+        return JSONResponse({"error": "Ya existe un documento con ese nombre; no se sobrescribió."}, status_code=409)
+    except Exception as exc:
+        if created:
+            target.unlink(missing_ok=True)
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+    finally:
+        await material.close()
+
 @app.get("/works/{cliente}", response_class=HTMLResponse)
 async def works_cliente(request: Request, cliente: str):
     if not _is_authenticated(request):
@@ -854,14 +911,141 @@ async def api_process_cliente(request: Request, cliente: str):
         return JSONResponse({"error": "No autenticado"}, status_code=401)
     try:
         from cowork_manager import procesar_entrada_cliente
-        trabajos = procesar_entrada_cliente(cliente)
+        # El panel usa el mismo cliente y flujo asincrono que Telegram.
+        from writer import WriterEngine
+        trabajos = await procesar_entrada_cliente(cliente, llm_client=WriterEngine()._llm)
+        errors = [t.error_msg for t in trabajos if t.estado == "error"]
         return JSONResponse({
-            "ok": True,
+            "ok": not errors,
+            "error": "; ".join(errors) if errors else None,
             "trabajos_creados": len(trabajos),
             "resultados": [{"tipo": t.tipo, "estado": t.estado, "titulo": t.titulo} for t in trabajos],
         })
     except Exception as e:
         return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+# ── Expedientes y evidencia (produccion) ──────────────────────
+
+@app.get("/api/cliente/{cliente}/expedientes")
+async def api_list_cases(request: Request, cliente: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from production_store import store
+    return {"cases": store.list_cases(get_cliente_dir(cliente).name)}
+
+
+@app.post("/api/cliente/{cliente}/expedientes")
+async def api_create_case(request: Request, cliente: str, titulo: str = Form(...)):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from cowork_manager import init_expediente_structure
+    try:
+        case = init_expediente_structure(cliente, titulo)
+        return {"ok": True, "case_id": case["id"], "root": str(case["root"])}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+@app.post("/api/cliente/{cliente}/expedientes/{case_id}/upload")
+async def api_case_upload(request: Request, cliente: str, case_id: str, material: UploadFile):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from cowork_manager import get_expediente_dir
+    try:
+        base = get_expediente_dir(cliente, case_id)
+        name = Path(material.filename or "documento").name
+        target = base / "Entrada" / name
+        if target.exists():
+            return JSONResponse({"error": "Ya existe un original con ese nombre"}, status_code=409)
+        target.write_bytes(await material.read())
+        return {"ok": True, "filename": name}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+@app.post("/api/cliente/{cliente}/expedientes/{case_id}/process/{filename}")
+async def api_case_process(request: Request, cliente: str, case_id: str, filename: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from cowork_manager import get_expediente_dir, process_case_document
+    from writer import WriterEngine
+    try:
+        original = get_expediente_dir(cliente, case_id) / "Entrada" / Path(filename).name
+        if not original.is_file(): raise ValueError("Documento no encontrado")
+        result = await process_case_document(cliente, case_id, original, llm_client=WriterEngine()._llm)
+        return {"ok": True, **result}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+# ── MCP (Model Context Protocol) — harness externo ──────────────────
+# Monta el endpoint MCP sobre el panel para que agentes externos (p.ej.
+# DeepSeek Harness / @deepseek-ai/dsh-mcp-client) usen las tools del backend.
+# Si la librería `mcp` no está instalada, el panel sigue funcionando sin MCP.
+def _mount_mcp() -> None:
+    try:
+        from mcp_server import build_mcp_app
+        path, sub_app = build_mcp_app()
+        app.mount(path, sub_app, name="mcp")
+        logger.info("MCP montado en %s (SSE en %s/sse)", path, path)
+    except Exception as exc:
+        logger.warning("MCP no montado (el panel sigue operando): %s", exc)
+
+
+_mount_mcp()
+
+
+
+@app.post("/api/cliente/{cliente}/expedientes/{case_id}/approve/{filename}")
+async def api_case_approve(request: Request, cliente: str, case_id: str, filename: str, publish: bool = Form(False)):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from cowork_manager import get_expediente_dir
+    from production_store import store
+    try:
+        base = get_expediente_dir(cliente, case_id)
+        draft = (base / "Borradores" / Path(filename).name).resolve()
+        if not draft.is_file() or draft.parent != (base / "Borradores").resolve(): raise ValueError("Borrador no encontrado")
+        destination = base / ("Entregables" if publish else "Revisados") / draft.name
+        shutil.copy2(draft, destination)
+        store.audit("case_document_approved", case_id, draft=str(draft), destination=str(destination), published=publish)
+        return {"ok": True, "path": str(destination), "status": "entregable" if publish else "revisado"}
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+@app.get("/api/sources/changes")
+async def api_source_changes(request: Request):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from production_store import store
+    return {"changes": store.latest_changes()}
+
+
+@app.post("/api/sources/sync")
+async def api_source_sync(request: Request):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from official_sources import sync_official_sources
+    result = await sync_official_sources()
+    return {"ok": not result["errors"], **result}
+
+
+@app.get("/api/sources/coverage")
+async def api_source_coverage(request: Request):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from production_store import store
+    return {"coverage": store.library_coverage()}
+
+
+@app.get("/sources", response_class=HTMLResponse)
+async def sources_page(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse(url="/", status_code=status.HTTP_302_FOUND)
+    from production_store import store
+    return templates.TemplateResponse(request, "sources.html", {"request": request, "changes": store.latest_changes()})
 
 
 # ── Research Agent (Fase 5) ───────────────────────────────────
@@ -881,7 +1065,7 @@ async def api_research(
     request: Request,
     query: str = Form(...),
     cliente: str = Form(""),
-    max_results: int = Form(3),
+    fecha_hechos: str = Form(""),
 ):
     if not _is_authenticated(request):
         return JSONResponse({"error": "No autenticado"}, status_code=401)
@@ -890,11 +1074,88 @@ async def api_research(
         result = await run_research(
             query=query,
             cliente=cliente if cliente else None,
-            max_results=max_results,
+            fecha_hechos=fecha_hechos or None,
+            include_local_laws=True,
         )
         return JSONResponse(result)
     except Exception as e:
         return JSONResponse({"error": str(e)[:200]}, status_code=400)
+
+
+@app.post("/api/research/runs")
+async def api_start_research_run(
+    request: Request,
+    query: str = Form(...),
+    cliente: str = Form(""),
+    case_id: str = Form(""),
+    fecha_hechos: str = Form(""),
+    budget_usd: Optional[float] = Form(None),
+):
+    """Inicia el flujo persistente; el cliente consulta luego su estado."""
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        from research_runs import research_runs
+        run = await research_runs.start(query=query, client_id=cliente or None, case_id=case_id or None,
+                                        facts_date=fecha_hechos or None, budget_usd=budget_usd)
+        return JSONResponse(run, status_code=202)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+@app.get("/api/research/runs/{run_id}")
+async def api_research_run(request: Request, run_id: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from production_store import store
+    run = store.research_run(run_id)
+    if not run:
+        return JSONResponse({"error": "Investigación no encontrada"}, status_code=404)
+    if run.get("status") == "queued":
+        try:
+            from research_runs import research_runs
+            await research_runs.resume(run_id)
+        except Exception:
+            pass
+    return run
+
+    return run
+
+
+@app.post("/api/research/runs/{run_id}/resume")
+async def api_resume_research_run(request: Request, run_id: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        from research_runs import research_runs
+        return await research_runs.resume(run_id)
+    except KeyError:
+        return JSONResponse({"error": "Investigación no encontrada"}, status_code=404)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+@app.post("/api/research/runs/{run_id}/clarify")
+async def api_clarify_research_run(request: Request, run_id: str, message: str = Form(...)):
+    """Vincula un antecedente nuevo al expediente y reinicia su análisis."""
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    try:
+        from research_runs import research_runs
+        return await research_runs.clarify(run_id, message)
+    except KeyError:
+        return JSONResponse({"error": "Investigación no encontrada"}, status_code=404)
+    except Exception as exc:
+        return JSONResponse({"error": str(exc)[:200]}, status_code=400)
+
+
+@app.post("/api/research/runs/{run_id}/cancel")
+async def api_cancel_research_run(request: Request, run_id: str):
+    if not _is_authenticated(request):
+        return JSONResponse({"error": "No autenticado"}, status_code=401)
+    from research_runs import research_runs
+    research_runs.cancel(run_id)
+    return {"ok": True}
 
 
 # ── Ebook Writer (Fase 6) ─────────────────────────────────────

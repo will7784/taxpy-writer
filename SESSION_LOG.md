@@ -571,3 +571,15 @@ esa arquitectura.
 - `llm_client.py`, `config.py`, `main.py`, `live_lookup.py`,
   `context_rag/law_loader.py`, `citation_guardrail.py`, `env.example`,
   `telegram_mvp_bot.py` (modificados)
+
+---
+
+## Sesión 2026-09-08 — Correcciones (ver detalle en NOTAS_SESION_2026-09-08.md)
+- OCR de imágenes/PDFs escaneados en Co-Work; acceso 'Investigar este cliente' desde Co-Work.
+- Frontend de Investigación con respaldo a /api/research si la ruta persistente no existe.
+- Fix validación síntesis aplicada (lists anidadas too_long; reintento; topes; min_length).
+- .env: RESEARCH_LLM_PROVIDER=deepseek, DEEPSEEK_MODEL=deepseek-chat.
+- Filtro de vigencia (solo excluye 'derogada'; corregido para no romper el IVA DL-825).
+- Ejecuciones 'queued' atascadas: _execute defensivo + resume automático en GET.
+- Pruebas: 42/42 OK. Pendientes: validar en vivo y capa 2 de vigencia (ver doc).
+

@@ -26,8 +26,9 @@ import config
 
 console = Console()
 
-# URL base del servicio ACJ
-ACJ_BASE_URL = "https://www4.sii.cl/acjui/internet/services/data/internetService"
+# URL base del servicio ACJ (reverse-engineered de sii_acjui_main.js -> ServiceHTTP)
+# Formato: {host}{CONFIG.app}{path} con CONFIG.app = "acjui"
+ACJ_BASE_URL = "https://www4.sii.cl/acjui/services/data/internetService"
 ACJ_LEGACY_URL = "https://www4.sii.cl/acjui/services/InternetApplicationService"
 
 # Headers estándar para evitar bloqueos
@@ -99,19 +100,25 @@ class SIIACJScraper:
 
     async def list_cuerpos_normativos(self) -> list[dict[str, Any]]:
         """Lista los cuerpos normativos disponibles (LIR, CT, IVA, etc.)."""
+        # Los métodos list* del ACJ usan RequestMetaData plano; envolverlo en
+        # metaData produce HTTP 400 y deja la biblioteca silenciosamente vacía.
         payload = {
-            "metaData": {
-                "namespace": "cl.sii.sdi.lob.juridica.acj.data.impl.InternetApplicationService/listCuerposNormativos",
-                "conversationId": "1",
-                "transactionId": "taxpy-sync",
-                "page": None,
-            },
-            "data": {},
+            "namespace": "cl.sii.sdi.lob.juridica.acj.data.impl.InternetApplicationService/listCuerposNormativos",
+            "conversationId": "1", "transactionId": "taxpy-sync", "page": None,
         }
         data = await self._post("cuerpos-normativos", payload)
         if data and "data" in data:
             return data["data"]
         return []
+
+    async def list_tipos_instancia(self) -> list[dict[str, Any]]:
+        """Confirma los tipos públicos antes de pedir jurisprudencia judicial."""
+        payload = {
+            "namespace": "cl.sii.sdi.lob.juridica.acj.data.impl.InternetApplicationService/listTiposInstancia",
+            "conversationId": "1", "transactionId": "taxpy-instancias", "page": None,
+        }
+        data = await self._post("tipos-instancia", payload)
+        return data.get("data", []) if data and isinstance(data.get("data"), list) else []
 
     async def find_articulos(self, cuerpo_normativo_id: int) -> list[dict[str, Any]]:
         """Lista los artículos de un cuerpo normativo."""
@@ -134,7 +141,7 @@ class SIIACJScraper:
         articulo_id: int,
         cuerpo_normativo_id: int | None = None,
         tipo_instancia_id: int = 1,
-        max_results: int = 2000,
+        max_results: int | None = None,
     ) -> list[dict[str, Any]]:
         """Busca pronunciamientos por artículo."""
         payload = {
@@ -165,9 +172,10 @@ class SIIACJScraper:
             results = data["data"]
             # A veces viene paginado
             if isinstance(results, dict) and "list" in results:
-                return results["list"][:max_results]
+                items = results["list"]
+                return items[:max_results] if max_results else items
             if isinstance(results, list):
-                return results[:max_results]
+                return results[:max_results] if max_results else results
         return []
 
     async def get_full_pronunciamiento(self, pron_id: int) -> dict[str, Any] | None:
@@ -201,19 +209,20 @@ class SIIACJScraper:
         return False
 
     @staticmethod
-    def pron_to_md(pron_data: dict[str, Any], articulo_nombre: str = "") -> str:
+    def pron_to_md(pron_data: dict[str, Any], articulo_nombre: str = "", *,
+                   cuerpo_normativo_id: int | None = None, cuerpo_nombre: str = "") -> str:
         """Convierte un pronunciamiento JSON a formato Markdown."""
         data = pron_data.get("data", pron_data)
         if not data:
             return ""
 
         pron_id = data.get("id", "")
-        codigo = data.get("codigo", "")
+        codigo = data.get("codigo", "") or data.get("codigoPronunciamiento", "")
         fecha = data.get("fecha", "")
-        tipo = data.get("tipoPronunciamiento", {}).get("nombre", "")
-        instancia = data.get("instancia", {}).get("nombre", "")
-        contenido = data.get("texto", "")
-        resumen = data.get("resumen", "")
+        tipo = data.get("tipoPronunciamiento", {}).get("nombre", "") or data.get("tipoCodigo", {}).get("nombre", "")
+        instancia = data.get("instancia", {}).get("nombre", "") or data.get("instanciaNombre", "")
+        contenido = data.get("texto", "") or data.get("sentencia", "") or data.get("contenido", "")
+        resumen = data.get("resumen", "") or data.get("extracto", "")
         pdf_url = data.get("urlDocumento", "") or "N/A"
 
         # Formatear fecha
@@ -231,13 +240,16 @@ class SIIACJScraper:
             "## Metadata",
             f"- source_type: jurisprudencia_sii",
             f"- jurisprudencia_id: {pron_id}",
-            f"- cuerpo_normativo_id: 2",
+            f"- cuerpo_normativo_id: {cuerpo_normativo_id if cuerpo_normativo_id is not None else data.get('cuerpoNormativoId', '')}",
+            f"- cuerpo_normativo: {cuerpo_nombre}",
             f"- articulo_id: {data.get('articuloId', '')}",
             f"- articulo_nombre: {articulo_nombre}",
             f"- fecha: {fecha_str}",
             f"- tipo_pronunciamiento: {tipo}",
             f"- instancia: {instancia}",
             f"- codigo_pronunciamiento: {codigo}",
+            f"- ruc: {data.get('ruc', '')}",
+            f"- partes: {data.get('partes', '')}",
             f"- pdf_url: {pdf_url}",
             "- pdf_descargado: no",
             "",

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Fuentes oficiales{% endblock %}
+{% block content %}
+<h1>Fuentes oficiales</h1>
+<p class="empty">Bitácora de cambios detectados. Los proyectos se muestran separados de las normas vigentes.</p>
+<button class="btn btn-primary" onclick="syncSources()">Sincronizar ahora</button>
+<div id="sync-result" style="margin-top: 1rem;"></div>
+<div class="card full-width" style="margin-top: 1rem;">
+  <h2> Cobertura de biblioteca</h2>
+  <p class="hint">Cada fila muestra los puntos de entrada oficiales registrados. La cobertura no se expresa como porcentaje cuando el organismo no publica un inventario total.</p>
+  <div id="coverage">Cargando cobertura…</div>
+</div>
+<div class="card full-width" style="margin-top: 1rem;">
+  <table class="table"><thead><tr><th>Fecha</th><th>Fuente</th><th>Tipo</th><th>Estado</th><th>Cambio</th><th>Enlace</th></tr></thead>
+  <tbody>{% for c in changes %}<tr><td>{{ c.detected_at }}</td><td>{{ c.source }}</td><td>{{ c.document_type }}</td><td>{{ c.legal_status }}</td><td>{{ c.change_type }}</td><td><a href="{{ c.url }}" target="_blank" rel="noopener">Ver fuente</a></td></tr>{% else %}<tr><td colspan="6">Aún no hay cambios registrados.</td></tr>{% endfor %}</tbody></table>
+</div>
+<script>
+function esc(value) { const el=document.createElement('div'); el.textContent=String(value ?? ''); return el.innerHTML; }
+async function loadCoverage() {
+  const target=document.getElementById('coverage');
+  const response=await fetch('/api/sources/coverage'); const data=await response.json();
+  if(!response.ok) { target.textContent=data.error || 'No se pudo cargar la cobertura.'; return; }
+  const rows=data.coverage || [];
+  if(!rows.length) { target.textContent='Aún no hay fuentes catalogadas. Pulsa “Sincronizar ahora” para registrar y consultar las fuentes oficiales.'; return; }
+  target.innerHTML='<table class="table"><thead><tr><th>Colección</th><th>Organismo</th><th>Tipo</th><th>Descubiertas</th><th>Descargadas</th><th>Indexadas</th><th>Estado</th></tr></thead><tbody>' + rows.map(row => `<tr><td>${esc(row.collection)}</td><td>${esc(row.source)}</td><td>${esc(row.document_type)}</td><td>${esc(row.discovered)}</td><td>${esc(row.downloaded)}</td><td>${esc(row.indexed)}</td><td>${esc(row.coverage)}</td></tr>`).join('') + '</tbody></table>';
+}
+async function syncSources() { const result=document.getElementById('sync-result'); result.textContent='Sincronizando…'; const r=await fetch('/api/sources/sync',{method:'POST'}); const j=await r.json(); result.textContent=j.ok ? `Listo: ${j.changes} cambio(s).` : `Error: ${(j.errors||[j.error]).join('; ')}`; loadCoverage(); if(j.ok) setTimeout(()=>location.reload(),700); }
+loadCoverage();
+</script>
+{% endblock %}

@@ -7,7 +7,10 @@ Integrado con Obsidian vault para persistencia y skill_manager para redaccion as
 
 from __future__ import annotations
 
+import hashlib
+import asyncio
 import shutil
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -16,6 +19,7 @@ from typing import Optional
 import yaml
 
 import config
+from production_store import store
 from obsidian_writer import (
     get_cliente_dir,
     init_cliente_structure,
@@ -27,6 +31,66 @@ from obsidian_writer import (
 from skill_manager import load_skills_context
 
 COWORK = config.COWORK_PATH
+
+
+def init_expediente_structure(cliente: str, titulo: str) -> dict[str, Path | str]:
+    """Crea un espacio aislado por expediente dentro del cliente."""
+    client_dir = get_cliente_dir(cliente)
+    if not client_dir.exists():
+        init_cliente_structure(cliente)
+    case = store.create_case(client_dir.name, titulo)
+    base = client_dir / "Expedientes" / case["id"]
+    dirs: dict[str, Path | str] = {"id": case["id"], "root": _ensure_case_dir(base)}
+    for name in ("Entrada", "Extraccion", "Evidencia", "Borradores", "Revisados", "Entregables"):
+        dirs[name.lower()] = _ensure_case_dir(base / name)
+    (base / "manifest.yaml").write_text(yaml.dump({"case": case, "version": 1}, allow_unicode=True), encoding="utf-8")
+    return dirs
+
+
+def _ensure_case_dir(path: Path) -> Path:
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def get_expediente_dir(cliente: str, expediente_id: str) -> Path:
+    client_dir = get_cliente_dir(cliente)
+    if not store.case_for(expediente_id, client_dir.name):
+        raise ValueError("Expediente no encontrado para este cliente")
+    return client_dir / "Expedientes" / expediente_id
+
+
+async def process_case_document(cliente: str, expediente_id: str, archivo: Path, *, llm_client) -> dict:
+    """Extrae y genera un borrador; el original no se mueve ni se modifica."""
+    from ocr_processor import extract_markdown
+    base = get_expediente_dir(cliente, expediente_id)
+    sha = hashlib.sha256(archivo.read_bytes()).hexdigest()
+    doc = store.add_case_document(expediente_id, str(archivo), sha, status="extrayendo")
+    job = store.create_job(expediente_id, sha, doc["id"], getattr(llm_client, "model", ""))
+    try:
+        text, meta = await extract_markdown(archivo)
+        if not text.strip():
+            raise ValueError("No se pudo extraer texto del documento")
+        extracted = base / "Extraccion" / f"{archivo.stem}.md"
+        extracted.write_text(text, encoding="utf-8")
+        store.complete_case_document(doc["id"], extracted_path=str(extracted), pages=meta.get("pages"), ocr=bool(meta.get("ocr")))
+        case_query = f"Analiza el documento y prepara un borrador verificable. Hechos extraídos: {text[:1500]}"
+        result = await redactar_para_cliente(cliente, "analisis", case_query, contenido_extra=text, llm_client=llm_client)
+        if not result or result.startswith("[ERROR"):
+            raise ValueError(result or "El modelo no genero un borrador")
+        draft = base / "Borradores" / f"{archivo.stem}_borrador.md"
+        draft.write_text(result, encoding="utf-8")
+        evidence = [{"document_id": doc["id"], "sha256": sha, "pages": meta.get("pages"), "ocr": meta.get("ocr", False)}]
+        try:
+            from official_sources import official_evidence
+            _text, legal_docs = official_evidence(text[:5000])
+            evidence.extend({"official_url": d["url"], "legal_status": d["legal_status"], "source_hash": d["content_hash"]} for d in legal_docs)
+        except Exception:
+            pass
+        store.finish_job(job["id"], status="review", output_path=str(draft), evidence=evidence)
+        return {"job": job["id"], "status": "review", "draft": str(draft), "evidence": evidence}
+    except Exception as exc:
+        store.finish_job(job["id"], status="failed", error=str(exc))
+        raise
 
 
 @dataclass
@@ -60,7 +124,7 @@ class Trabajo:
 
 
 def _trabajo_id() -> str:
-    return datetime.now().strftime("%Y%m%d%H%M%S")
+    return str(uuid.uuid4())
 
 
 def _save_trabajo(t: Trabajo) -> Path:
@@ -98,30 +162,21 @@ def escanear_entrada(cliente: str) -> list[Path]:
     return sorted([p for p in entrada_dir.iterdir() if p.is_file() and not p.name.startswith(".")])
 
 
-def procesar_documento(cliente: str, archivo: Path) -> tuple[str, str]:
-    """Lee un documento de entrada y extrae texto para procesar."""
-    ext = archivo.suffix.lower()
-    if ext == ".txt":
-        return archivo.read_text(encoding="utf-8"), archivo.name
-    elif ext == ".md":
-        return archivo.read_text(encoding="utf-8"), archivo.name
-    elif ext == ".docx":
-        try:
-            from docx import Document
-            doc = Document(str(archivo))
-            return "\n".join([p.text for p in doc.paragraphs if p.text.strip()]), archivo.name
-        except Exception as e:
-            return "", f"Error leyendo DOCX: {e}"
-    elif ext == ".pdf":
-        try:
-            import pdfplumber
-            with pdfplumber.open(str(archivo)) as pdf:
-                pages = [page.extract_text() or "" for page in pdf.pages]
-            return "\n".join(pages), archivo.name
-        except Exception as e:
-            return "", f"Error leyendo PDF: {e}"
-    else:
-        return "", f"Formato no soportado: {ext}"
+async def procesar_documento(archivo: Path) -> tuple[str, str]:
+    """Lee un documento de entrada y extrae texto mediante ocr_processor.
+
+    Soporta txt/md/docx/pdf y también imágenes (png/jpg/...). Los PDFs
+    escaneados y las imágenes se procesan con OCR de visión (GPT-4o),
+    de modo que la carpeta Co-Work puede ingerir fotos y escaneos.
+    """
+    from ocr_processor import extract_markdown
+    try:
+        text, meta = await extract_markdown(archivo)
+        if not text.strip():
+            return "", f"No se extrajo texto de {archivo.name}. El documento puede requerir OCR."
+        return text, meta.get("tipo_src", archivo.name)
+    except Exception as e:
+        return "", f"Error leyendo {archivo.name}: {e}"
 
 
 def mover_a_procesados(cliente: str, archivo: Path) -> Path:
@@ -162,7 +217,7 @@ def marcar_error(t: Trabajo, error_msg: str):
     _save_trabajo(t)
 
 
-def redactar_para_cliente(
+async def redactar_para_cliente(
     cliente: str,
     tipo: str,
     instrucciones: str,
@@ -194,6 +249,12 @@ def redactar_para_cliente(
 
     skills_context = load_skills_context(f"{tipo} {instrucciones}")
 
+    evidence = ""
+    try:
+        from official_sources import official_evidence
+        evidence, _ = official_evidence(instrucciones)
+    except Exception:
+        pass
     system = (
         "Eres un asistente legal chileno especializado en derecho tributario.\n"
         "Vas a redactar un documento para un cliente especifico.\n\n"
@@ -203,6 +264,8 @@ def redactar_para_cliente(
         f"Instrucciones: {instrucciones}\n\n"
         "Redacta en espanol chileno formal, dirigido al SII cuando corresponda.\n"
         "Incluye fundamentos de derecho con citas exactas.\n"
+        "No presentes proyectos de ley como derecho vigente. Cada afirmacion juridica "
+        "debe usar una fuente oficial suministrada o marcarse como pendiente de verificacion.\n"
         "Usa la estructura y el tono del skill de referencia si esta disponible.\n"
     )
 
@@ -210,12 +273,14 @@ def redactar_para_cliente(
         system += f"\n{skills_context}\n"
 
     user = f"{instrucciones}"
+    if evidence:
+        user += f"\n\n{evidence}"
     if contenido_extra:
         user += f"\n\n=== DOCUMENTOS DEL CLIENTE ===\n{contenido_extra[:5000]}"
 
     if llm_client:
         try:
-            result = llm_client.chat_completion(
+            result = await llm_client.chat_completion(
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
@@ -230,7 +295,7 @@ def redactar_para_cliente(
     return system + "\n\n---\n" + user
 
 
-def procesar_entrada_cliente(
+async def procesar_entrada_cliente(
     cliente: str,
     *,
     llm_client=None,
@@ -248,8 +313,14 @@ def procesar_entrada_cliente(
 
     trabajos = []
     for archivo in archivos:
-        contenido, _ = procesar_documento(cliente, archivo)
+        try:
+            contenido, extraction_note = await procesar_documento(archivo)
+        except Exception as exc:
+            contenido, extraction_note = "", f"No se pudo leer el documento: {type(exc).__name__}"
         if not contenido:
+            t = crear_trabajo(cliente, "analisis", f"Error de lectura: {archivo.name}", archivo_entrada=archivo.name)
+            marcar_error(t, extraction_note if extraction_note != archivo.name else "No se extrajo texto. El documento puede requerir OCR.")
+            trabajos.append(t)
             continue
 
         tipo = detectar_tipo_trabajo(archivo.name, contenido)
@@ -262,7 +333,7 @@ def procesar_entrada_cliente(
         )
 
         try:
-            resultado = redactar_para_cliente(
+            resultado = await redactar_para_cliente(
                 cliente=cliente,
                 tipo=tipo,
                 instrucciones=f"Procesa el siguiente documento y genera la respuesta o analisis correspondiente.",
@@ -292,7 +363,9 @@ def procesar_entrada_cliente(
         except Exception as e:
             marcar_error(t, str(e))
 
-        mover_a_procesados(cliente, archivo)
+        # Un original solo sale de entrada cuando hay resultado persistido.
+        if t.estado == "completado":
+            mover_a_procesados(cliente, archivo)
         trabajos.append(t)
 
     return trabajos

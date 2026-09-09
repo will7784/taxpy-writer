@@ -7,6 +7,7 @@ con fuentes legales verificables (leyes, circulares, jurisprudencia SII).
 
 from __future__ import annotations
 
+import asyncio
 import re
 import sqlite3
 import unicodedata
@@ -43,7 +44,7 @@ from cowork_manager import (
     escanear_entrada, list_clientes as cowork_list_clientes,
 )
 from obsidian_writer import init_cliente_structure, write_peticion, write_analisis, write_note
-from research_agent import run_research
+from research_runs import research_runs
 from study_agent import run_study
 from ebook_writer import write_ebook
 
@@ -346,7 +347,7 @@ class WriterTelegramBot:
         status = await update.message.reply_text(f"Procesando {len(archivos)} documento(s) para *{cliente}*...", parse_mode="Markdown")
 
         try:
-            trabajos = procesar_entrada_cliente(cliente, llm_client=self.writer._llm)
+            trabajos = await procesar_entrada_cliente(cliente, llm_client=self.writer._llm)
         except Exception as e:
             await status.edit_text(f"Error: {e}")
             return
@@ -383,7 +384,7 @@ class WriterTelegramBot:
         status = await update.message.reply_text(f"Redactando *{tipo}* para *{cliente}*...", parse_mode="Markdown")
 
         try:
-            resultado = redactar_para_cliente(
+            resultado = await redactar_para_cliente(
                 cliente=cliente,
                 tipo=tipo,
                 instrucciones=instrucciones,
@@ -519,8 +520,8 @@ class WriterTelegramBot:
         if not args:
             await update.message.reply_text(
                 "*Comando /investigar*\n"
-                "Busca jurisprudencia, circulares y doctrina en fuentes oficiales (bcn.cl, sii.cl) "
-                "y guarda los resultados en tu vault de Obsidian.\n\n"
+                "Responde la consulta aplicada al caso usando biblioteca local, jurisprudencia y fuentes oficiales "
+                "(BCN, SII, UAF, TTA y Poder Judicial cuando corresponda).\n\n"
                 "Uso:\n"
                 "/investigar CLIENTE TEXTO — busca para un cliente especifico\n"
                 "/investigar TEXTO — busca en general\n\n"
@@ -550,7 +551,14 @@ class WriterTelegramBot:
         status = await update.message.reply_text(f"🔍 Investigando: _{query}_...")
 
         try:
-            result = await run_research(query, cliente=cliente, max_results=3)
+            run = await research_runs.start(query=query, client_id=cliente)
+            while run.get("status") in {"queued", "running"}:
+                await asyncio.sleep(2)
+                from production_store import store as production_store
+                run = production_store.research_run(run["id"]) or run
+            if run.get("status") not in {"completed", "partial"}:
+                raise RuntimeError(run.get("error") or "La investigación se detuvo.")
+            result = run.get("result") or {}
         except Exception as e:
             await status.edit_text(f"Error en la investigacion: {e}")
             return
@@ -558,9 +566,12 @@ class WriterTelegramBot:
         await status.delete()
 
         reply = result.get("reply", "Sin resultados.")
-        await update.message.reply_text(reply, parse_mode="Markdown", disable_web_page_preview=True)
+        for start in range(0, len(reply), 3500):
+            await update.message.reply_text(reply[start:start + 3500], disable_web_page_preview=True)
+        for warning in result.get("warnings", []):
+            await update.message.reply_text(warning)
 
-        if result["resultados"] > 0:
+        if result.get("archivos"):
             vault_note = (
                 f"\n_Investigacion guardada en Obsidian:_\n"
                 f"`{result['resumen']}`\n"
@@ -1068,6 +1079,22 @@ class WriterTelegramBot:
                 query=text,
                 llm_client=self.writer._llm,
             )
+
+            # Las fuentes oficiales sincronizadas tienen prioridad sobre el
+            # descubrimiento web. Un proyecto queda expresamente etiquetado.
+            try:
+                from official_sources import official_evidence, should_check_official
+                official_text, official_used = official_evidence(text)
+                if official_text:
+                    user_prompt = f"{official_text}\n\n{user_prompt}"
+                elif should_check_official(text):
+                    user_prompt = (
+                        "=== ESTADO DE FUENTES OFICIALES ===\n"
+                        "No hay una fuente oficial sincronizada para confirmar esta novedad. "
+                        "No la presentes como derecho vigente.\n\n" + user_prompt
+                    )
+            except Exception as e:
+                console.print(f"[yellow]⚠️ Evidencia oficial no disponible: {e}[/yellow]")
 
             tags_loaded = prompt_input.route.law_tags
             tokens_est = prompt_input.tokens_used or sum(law_loader.get(t).token_estimate for t in tags_loaded if law_loader.get(t))

@@ -1,17 +1,15 @@
 {% extends "base.html" %}
 {% block title %}Investigación{% endblock %}
 {% block content %}
-<h1>🔍 Investigación web</h1>
+<h1>ClaudIA · Investigación jurídica profunda</h1>
 <p class="hint">
-    Busca jurisprudencia, circulares, oficios y doctrina en fuentes oficiales
-    (<code>sii.cl</code>, <code>bcn.cl</code>). Los resultados se guardan en el vault
-    como notas pendientes: revísalas y aprueba solo lo que valides.
+    Responde la pregunta aplicada al caso, separa hechos, supuestos y riesgos, y permite abrir las fuentes oficiales que respaldan cada conclusión. Los identificadores objetivos se omiten antes de buscar fuera del expediente.
 </p>
 {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
 {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
 
 <div class="card full-width">
-    <div class="grid grid-2" style="margin-bottom:0.75rem;">
+    <div class="form-group" style="margin-bottom:0.75rem;">
         <div class="form-group">
             <label>Cliente (opcional)</label>
             <select id="res-cliente">
@@ -22,32 +20,35 @@
             </select>
         </div>
         <div class="form-group">
-            <label>Resultados a buscar</label>
-            <select id="res-max">
-                <option value="3">3</option>
-                <option value="5">5</option>
-                <option value="8">8</option>
-            </select>
+            <label>Fecha de los hechos (opcional)</label>
+            <input id="res-fecha" type="date">
         </div>
     </div>
 
     <div class="res-chat" id="res-chat">
         <div class="res-msg res-bot" data-init>
-            Hola 👋 ¿Qué necesitas investigar? Ejemplos:<br>
-            • "prescripción art 200 CT jurisprudencia 2025"<br>
-            • "circular SII régimen pro pyme 2025"<br>
-            • "oficio art 17 n 8 LIR venta de inmuebles"
+            Hola — ¿Qué necesitas investigar? Ejemplos:<br>
+            "prescripción art 200 CT jurisprudencia 2025"<br>
+            "circular SII régimen pro pyme 2025"<br>
+            "oficio art 17 n 8 LIR venta de inmuebles"
         </div>
     </div>
 
     <form id="res-form" onsubmit="doResearch(event)" style="display:flex;gap:0.5rem;margin-top:0.75rem;">
         <input type="text" id="res-input" placeholder="Escribe qué quieres investigar…" style="flex:1;" required>
-        <button type="submit" class="btn btn-primary" style="width:auto;">Investigar 🔍</button>
+        <button type="submit" class="btn btn-primary" style="width:auto;">Investigar</button>
     </form>
     <div id="res-status" style="margin-top:0.5rem;"></div>
 </div>
 
 <script>
+// Si viene ?cliente=Nombre, preseleccionar en el selector (une el expediente con la biblioteca).
+const urlCliente = new URLSearchParams(location.search).get('cliente');
+if (urlCliente) {
+  const sel = document.getElementById('res-cliente');
+  if (sel && [...sel.options].some(o => o.value === urlCliente)) sel.value = urlCliente;
+}
+
 function addMsg(role, html) {
     const chat = document.getElementById('res-chat');
     const div = document.createElement('div');
@@ -64,47 +65,130 @@ function esc(s) {
     return d.innerHTML;
 }
 
+async function startPersistent(q, cliente, fecha) {
+    const fd = new FormData();
+    fd.append('query', q);
+    fd.append('cliente', cliente);
+    fd.append('fecha_hechos', fecha);
+    const resp = await fetch('/api/research/runs', { method: 'POST', body: fd });
+    const run = await resp.json();
+    // Si el servidor no tiene la ruta persistente (404 "Not Found"), usar el flujo síncrono.
+    if (resp.status === 404 || run.detail === 'Not Found') {
+        return await startSync(q, cliente, fecha);
+    }
+    if (!resp.ok || run.error) {
+        throw new Error(run.error || run.detail || 'No se pudo iniciar la consulta');
+    }
+    return run;
+}
+
+async function startSync(q, cliente, fecha) {
+    const fd = new FormData();
+    fd.append('query', q);
+    fd.append('cliente', cliente);
+    fd.append('fecha_hechos', fecha);
+    const resp = await fetch('/api/research', { method: 'POST', body: fd });
+    const result = await resp.json();
+    if (!resp.ok || result.error) throw new Error(result.error || 'No se pudo iniciar la consulta');
+    return { __sync: true, result };
+}
+
 async function doResearch(e) {
     e.preventDefault();
     const input = document.getElementById('res-input');
     const q = input.value.trim();
     if (!q) return;
-
+    const button = e.target.querySelector('button[type="submit"]');
+    button.disabled = true;
     addMsg('user', esc(q));
     input.value = '';
-
     const status = document.getElementById('res-status');
-    status.innerHTML = '<span style="color:var(--text-muted);">Buscando y procesando… (puede tardar 30-60 s)</span>';
-
+    status.textContent = 'ClaudIA está construyendo el expediente, leyendo fuentes completas y comprobando las citas. Puedes dejar esta página abierta mientras continúa.';
+    const cliente = document.getElementById('res-cliente').value;
+    const fecha = document.getElementById('res-fecha').value;
     try {
-        const fd = new FormData();
-        fd.append('query', q);
-        fd.append('cliente', document.getElementById('res-cliente').value);
-        fd.append('max_results', document.getElementById('res-max').value);
-
-        const resp = await fetch('/api/research', { method: 'POST', body: fd });
-        const json = await resp.json();
+        const run = await startPersistent(q, cliente, fecha);
+        let json;
+        if (run.__sync) {
+            json = run.result;
+        } else {
+            json = await waitForResearch(run.id, status);
+        }
         status.innerHTML = '';
-
-        if (json.error) {
-            addMsg('bot', '<div class="alert alert-error">' + esc(json.error) + '</div>');
+        if (!json || json.error) {
+            addMsg('bot', '<div class="alert alert-error">' + esc((json || {}).error || 'La investigación no terminó correctamente.') + '</div>');
             return;
         }
-
-        if (json.resultados === 0) {
-            addMsg('bot', 'No encontré resultados para esa búsqueda. Prueba con términos más específicos.');
-            return;
-        }
-
-        // Mostrar los resultados
-        let html = `<strong>Investigación: ${esc(json.query)}</strong><br><small>${json.resultados} resultado(s) — guardados en el vault</small><br><br>`;
-        html += `<div class="res-reply">${json.reply.replace(/\n/g, '<br>')}</div>`;
-        html += `<br><em>Nota: aproba las que valides desde <a href="/review/notas">Notas aprobadas</a>.</em>`;
-        addMsg('bot', html);
+        renderResearch(json, run.__sync ? null : run.id);
     } catch (err) {
         status.innerHTML = '';
         addMsg('bot', '<div class="alert alert-error">Error: ' + esc(err.message) + '</div>');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+function renderResearch(json, runId) {
+    if (!json.has_evidence) {
+        addMsg('bot', esc(json.reply || 'No se reunió evidencia suficiente para responder.'));
+        return;
+    }
+    let html = `<strong>Investigación: ${esc(json.query)}</strong><br><small>Conclusiones con respaldo documental</small><br><br>`;
+    if (json.scope) html += `<p><small>Fecha de corte: ${esc(json.scope.research_cutoff || 'no informada')} · Hechos: ${esc(json.scope.facts_date || 'no informada')} · Costo registrado: USD ${esc(String(json.scope.cost_usd ?? 0))} de ${esc(String(json.scope.budget_usd ?? 0))}</small></p>`;
+    html += `<div class="res-reply">${esc(json.reply || 'No se generó una respuesta.').replace(/\n/g, '<br>')}</div>`;
+    for (const warning of json.warnings || []) html += `<p class="alert alert-error">${esc(warning)}</p>`;
+    if ((json.evidence || []).length) {
+        html += '<details><summary>Ver pasajes que respaldan las conclusiones</summary>';
+        for (const item of json.evidence) html += `<p><strong>${esc(item.statement)}</strong></p><blockquote>${esc(item.quote)}</blockquote>`;
+        html += '</details>';
+    }
+    for (const source of json.sources || []) {
+        if (/^https?:\/\//i.test(source.url)) html += `<p>${source.official ? 'Oficial' : 'Secundaria'}: <a href="${esc(source.url).replace(/"/g, '&quot;')}" target="_blank" rel="noopener noreferrer">${esc(source.title)}</a>${source.location ? '<br><small>Ubicación: ' + esc(source.location) + '</small>' : ''}</p>`;
+    }
+    if (runId) {
+        html += `<div class="form-group" style="margin-top:1rem"><label for="clarify-${esc(runId)}">Agregar un antecedente o aclaración al expediente</label><div style="display:flex;gap:.5rem"><input id="clarify-${esc(runId)}" type="text" placeholder="Ej.: el contrato fija un honorario sin comisión"><button class="btn btn-secondary" type="button" onclick="clarifyResearch('${esc(runId)}', this)">Incorporar y revisar</button></div></div>`;
+    }
+    html += `<br><em>Nota: aprueba las que valides desde <a href="/review/notas">Notas aprobadas</a>.</em>`;
+    addMsg('bot', html);
+}
+
+
+async function clarifyResearch(runId, button) {
+    const input = document.getElementById('clarify-' + runId);
+    const message = input && input.value.trim();
+    if (!message) return;
+    button.disabled = true;
+    const status = document.getElementById('res-status');
+    status.textContent = 'Incorporando la aclaración al expediente y revisando las conclusiones.';
+    try {
+        const fd = new FormData();
+        fd.append('message', message);
+        const response = await fetch('/api/research/runs/' + encodeURIComponent(runId) + '/clarify', {method: 'POST', body: fd});
+        const run = await response.json();
+        if (!response.ok || run.error) throw new Error(run.error || 'No se pudo incorporar la aclaración.');
+        const result = await waitForResearch(runId, status);
+        status.innerHTML = '';
+        if (result.error) throw new Error(result.error);
+        addMsg('bot', `<strong>Conclusión revisada</strong><br><br><div class="res-reply">${esc(result.reply || 'No se generó una respuesta.').replace(/\n/g, '<br>')}</div>`);
+    } catch (error) {
+        status.innerHTML = '';
+        addMsg('bot', '<div class="alert alert-error">Error: ' + esc(error.message) + '</div>');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+async function waitForResearch(id, status) {
+    while (true) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        const resp = await fetch('/api/research/runs/' + encodeURIComponent(id));
+        const run = await resp.json();
+        if (!resp.ok) return run;
+        status.textContent = 'Estado: ' + ({queued:'en espera', running:'investigando', completed:'completa', partial:'parcial', failed:'fallida', cancelled:'cancelada'}[run.status] || run.status) + '.';
+        if (run.status === 'completed' || run.status === 'partial') return run.result;
+        if (run.status === 'failed' || run.status === 'cancelled') return {error: run.error || 'La investigación se detuvo.'};
     }
 }
 </script>
 {% endblock %}
+

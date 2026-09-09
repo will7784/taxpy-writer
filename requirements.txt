@@ -18,6 +18,15 @@ jinja2>=3.1.0
 python-multipart>=0.0.17
 itsdangerous>=2.2.0
 
+# MCP (Model Context Protocol) — expone las tools del backend a agentes/harness externos
+# v1.x: FastMCP API estable documentada por el harness de DeepSeek (@deepseek-ai/dsh-mcp-client).
+# Importante: fastapi==0.115.0 exige starlette<0.39 (>=0.37.2). mcp acepta starlette>=0.27,
+# pero sse-starlette 3.x exige starlette>=0.49.1 y rompería fastapi, así que fijamos
+# sse-starlette<2 (1.x funciona con starlette 0.38). No cambiar esto sin revisar.
+mcp>=1.28,<2
+sse-starlette>=1.6.1,<2
+starlette>=0.37.2,<0.39
+
 # PDF processing (pdfplumber: texto nativo; PyMuPDF: rasteriza escaneos para OCR vision)
 PyPDF2>=3.0.0
 pdfplumber>=0.10.0
@@ -27,6 +36,7 @@ PyMuPDF>=1.24.0
 python-dotenv>=1.0.0
 rich>=13.0.0
 httpx>=0.27.0
+truststore>=0.10.0
 PyYAML>=6.0
 
 # Validación de schemas (parser legal + salidas estructuradas de LLM)

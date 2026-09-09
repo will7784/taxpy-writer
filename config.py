@@ -21,10 +21,14 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 # ============================================
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+# Investigación puede usar un proveedor distinto del chat habitual.
+RESEARCH_LLM_PROVIDER = os.getenv("RESEARCH_LLM_PROVIDER", "").strip().lower()
 
 # Google Gemini (recomendado: 1M contexto, leyes completas)
 # =================================================================
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MAX_CONTEXT = int(os.getenv("GEMINI_MAX_CONTEXT", "1000000"))
 
 # Kimi / Moonshot (1M contexto, leyes completas — recomendado para modo estudio)
 # API OpenAI-compatible: https://platform.moonshot.ai
@@ -72,6 +76,28 @@ JURISDICCION = os.getenv("JURISDICCION", "chile")
 # Capa 3: busqueda en vivo (live_lookup.py)
 # ============================================
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+# Ventana máxima admitida por cada consulta de Tavily. ClaudIA ejecuta todas
+# sus consultas y analiza todos los documentos pertinentes que el proveedor entregue.
+TAVILY_RESULTS_PER_QUERY = int(os.getenv("TAVILY_RESULTS_PER_QUERY", "20"))
+# Límite técnico de concurrencia para no saturar los sitios consultados; no
+# descarta fuentes ni limita cuántas se investigan.
+RESEARCH_FETCH_CONCURRENCY = int(os.getenv("RESEARCH_FETCH_CONCURRENCY", "6"))
+# El análisis divide contexto solo por capacidad del modelo y procesa varias
+# tandas en paralelo. Ninguna fuente pertinente se omite por ello.
+RESEARCH_ANALYSIS_CONCURRENCY = int(os.getenv("RESEARCH_ANALYSIS_CONCURRENCY", "1"))
+RESEARCH_EVIDENCE_CHARS_PER_BATCH = int(os.getenv("RESEARCH_EVIDENCE_CHARS_PER_BATCH", "60000"))
+# Espacio de salida para hallazgos e informe; no limita fuentes ni citas.
+# 8000 mantiene compatibilidad con deepseek-chat. Ajustar al cambiar de modelo.
+RESEARCH_MAX_OUTPUT_TOKENS = int(os.getenv("RESEARCH_MAX_OUTPUT_TOKENS", "8000"))
+RESEARCH_LLM_TIMEOUT_SECONDS = float(os.getenv("RESEARCH_LLM_TIMEOUT_SECONDS", "240"))
+# Presupuesto compartido de la investigación profunda. Se expresa en USD para
+# poder aplicar el mismo límite aunque se cambie de proveedor.
+RESEARCH_MONTHLY_BUDGET_USD = float(os.getenv("RESEARCH_MONTHLY_BUDGET_USD", "150"))
+RESEARCH_RUN_BUDGET_USD = float(os.getenv("RESEARCH_RUN_BUDGET_USD", "15"))
+RESEARCH_RESERVED_FINAL_SHARE = float(os.getenv("RESEARCH_RESERVED_FINAL_SHARE", "0.25"))
+# La sincronización semanal vuelve a revisar documentos recientes: algunos
+# portales publican o corrigen fallos después de su fecha original.
+LIBRARY_LOOKBACK_DAYS = int(os.getenv("LIBRARY_LOOKBACK_DAYS", "14"))
 
 # ============================================
 # DEPRECATED: vars del RAG con chunks
@@ -106,6 +132,8 @@ WRITER_TEMPERATURE = float(os.getenv("WRITER_TEMPERATURE", "0.2"))
 # Paths
 # ============================================
 TELEGRAM_DB_PATH = Path(os.getenv("TELEGRAM_DB_PATH", str(BASE_DIR / "impuestia.sqlite3")))
+PRODUCTION_DB_PATH = Path(os.getenv("PRODUCTION_DB_PATH", str(BASE_DIR / "impuestia_production.sqlite3")))
+BACKUPS_DIR = Path(os.getenv("BACKUPS_DIR", str(BASE_DIR / "backups")))
 EXPORTS_DIR = Path(os.getenv("EXPORTS_DIR", str(BASE_DIR / "exports")))
 EXPORTS_DIR.mkdir(exist_ok=True)
 
@@ -137,9 +165,38 @@ COWORK_PATH.mkdir(parents=True, exist_ok=True)
 # ============================================
 # Admin panel credentials (fallback seguro)
 # ============================================
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "will")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "anwi7784")
-SESSION_SECRET = os.getenv("SESSION_SECRET", "impuestia-secret-change-me")
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+SESSION_SECRET = os.getenv("SESSION_SECRET", "")
+
+# Produccion: vigilancia y alertas de fuentes oficiales.
+OFFICIAL_SYNC_HOUR = os.getenv("OFFICIAL_SYNC_HOUR", "06:15")
+OFFICIAL_SYNC_TIMEZONE = os.getenv("OFFICIAL_SYNC_TIMEZONE", "America/Santiago")
+ADMIN_TELEGRAM_CHAT_IDS = [x.strip() for x in os.getenv("ADMIN_TELEGRAM_CHAT_IDS", "").split(",") if x.strip()]
+BCN_LEYCHILE_URLS = [x.strip() for x in os.getenv("BCN_LEYCHILE_URLS", "").split(",") if x.strip()]
+CONGRESS_SOURCE_URLS = [x.strip() for x in os.getenv("CONGRESS_SOURCE_URLS", "").split(",") if x.strip()]
+DIARIO_OFICIAL_URLS = [x.strip() for x in os.getenv("DIARIO_OFICIAL_URLS", "").split(",") if x.strip()]
+SII_OFFICIAL_URLS = [x.strip() for x in os.getenv("SII_OFFICIAL_URLS", "").split(",") if x.strip()]
+
+
+# ============================================
+# MCP (Model Context Protocol) — harness externo
+# ============================================
+# Token bearer para que el harness/agente externo se autentique contra el
+# endpoint MCP montado en el panel. Si está vacío, el endpoint queda abierto
+# (solo para desarrollo local). En producción SIEMPRE debe estar seteado.
+MCP_TOKEN = os.getenv("MCP_TOKEN", "")
+# Ruta base del endpoint MCP. El SSE queda en {MCP_MOUNT_PATH}/sse (ej. /mcp/sse).
+MCP_MOUNT_PATH = os.getenv("MCP_MOUNT_PATH", "/mcp")
+
+
+def require_production_secrets() -> None:
+    """Evita desplegar el panel con credenciales conocidas o una cookie insegura."""
+    missing = [name for name, value in {
+        "ADMIN_USERNAME": ADMIN_USERNAME, "ADMIN_PASSWORD": ADMIN_PASSWORD, "SESSION_SECRET": SESSION_SECRET,
+    }.items() if not value]
+    if missing:
+        raise RuntimeError("Configura secretos de producción: " + ", ".join(missing))
 
 # ============================================
 # Sync vault producción → Obsidian local

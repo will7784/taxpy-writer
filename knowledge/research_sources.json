@@ -1,0 +1,23 @@
+[
+  {
+    "topics": [["arrend", "arriend"], ["socio", "accionista"]],
+    "title": "Ley sobre Impuesto a la Renta, DL 824 — texto vigente (artículo 21)",
+    "url": "https://www.bcn.cl/leychile/navegar?idNorma=6368&idParte=8656063",
+    "content": "Texto vigente de la Ley sobre Impuesto a la Renta. Artículo 21: uso o goce de bienes de la empresa por accionistas, socios y personas relacionadas; verificar el texto aplicable a la fecha de la operación.",
+    "official": true
+  },
+  {
+    "topics": [["arrend", "arriend"], ["socio", "accionista"]],
+    "title": "Oficio SII N° 1787, de 20.07.2012 — uso o goce y sumas efectivamente pagadas",
+    "url": "https://www.sii.cl/pagina/jurisprudencia/adminis/2012/renta/ja1787.htm",
+    "content": "Arrendamiento de inmueble de sociedad a socio, valor de mercado, uso o goce y presunción del artículo 21. Doctrina histórica de 2012: verificar normativa aplicable a la fecha del caso.",
+    "official": true
+  },
+  {
+    "topics": [["arrend", "arriend"], ["socio", "accionista"]],
+    "title": "Oficio SII N° 1707, de 28.07.2017 — uso o goce de inmueble y calidad del beneficiario",
+    "url": "https://www.sii.cl/normativa_legislacion/jurisprudencia_administrativa/ley_impuesto_renta/2017/ja1707.htm",
+    "content": "Arrendamiento de inmueble a socio empresario individual. Requisitos del beneficiario, presunción de uso o goce, pagos y avalúo proporcional. Doctrina histórica de 2017: verificar normativa aplicable a la fecha del caso.",
+    "official": true
+  }
+]

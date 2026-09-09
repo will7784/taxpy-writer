@@ -19,6 +19,8 @@ si no está configurada, la Capa 3 queda desactivada sin romper nada.
 from __future__ import annotations
 
 import httpx
+from http_security import tls_context
+from urllib.parse import urlparse
 from rich.console import Console
 
 import config
@@ -26,7 +28,13 @@ import config
 console = Console()
 
 TAVILY_URL = "https://api.tavily.com/search"
-OFFICIAL_DOMAINS = ["bcn.cl", "sii.cl"]  # fallback; la jurisdiccion activa puede sobreescribir
+# Un fallo o una actuación oficial no pierde su carácter por no ser tributaria.
+# Esta lista sólo clasifica autoridad de la fuente; la pertinencia se revisa
+# después con el texto completo.
+OFFICIAL_DOMAINS = [
+    "bcn.cl", "sii.cl", "uaf.cl", "tta.cl", "pjud.cl", "scj.cl", "cmfchile.cl",
+    "fiscaliadechile.cl", "diariooficial.interior.gob.cl",
+]  # fallback; la jurisdiccion activa puede sobreescribir
 
 _COUNTRY_BY_JURISDICTION = {"chile": "chile", "colombia": "colombia"}
 
@@ -43,19 +51,42 @@ def _jurisdiction_settings() -> tuple[list[str], str]:
         return OFFICIAL_DOMAINS, "chile"
 
 
-async def search_live(query: str, *, max_results: int = 5) -> list[dict]:
-    """Busca en fuentes vivas. Prioriza dominios oficiales; cae a web general si no hay resultados."""
+class SearchUnavailable(RuntimeError):
+    """La búsqueda no pudo ejecutarse; no equivale a cero resultados."""
+
+
+async def search_live(query: str, *, strict: bool = False) -> list[dict]:
+    """Consulta todas las fuentes devueltas por cada búsqueda, sin corte local."""
     if not config.TAVILY_API_KEY:
+        if strict:
+            raise SearchUnavailable("Falta configurar TAVILY_API_KEY para buscar en la web.")
         return []
 
+    request_size = config.TAVILY_RESULTS_PER_QUERY
+    if request_size < 1:
+        raise ValueError("TAVILY_RESULTS_PER_QUERY debe ser mayor que cero.")
     official_domains, country = _jurisdiction_settings()
-    async with httpx.AsyncClient(timeout=15) as client:
-        official = await _tavily_search(
-            client, query, include_domains=official_domains, max_results=max_results, country=country
-        )
-        if official:
-            return official
-        return await _tavily_search(client, query, include_domains=None, max_results=max_results, country=country)
+    async with httpx.AsyncClient(timeout=15, verify=tls_context()) as client:
+        try:
+            results = await _tavily_search(
+                client, query, include_domains=official_domains, max_results=request_size, country=country
+            )
+            # La búsqueda general complementa la oficial aun cuando esta tenga resultados.
+            extra = await _tavily_search(client, query, include_domains=None,
+                                         max_results=request_size, country=country)
+            seen = {r["url"] for r in results}
+            for result in extra:
+                if result["url"] not in seen:
+                    results.append(result)
+                    seen.add(result["url"])
+            for result in results:
+                host = (urlparse(result["url"]).hostname or "").lower()
+                result["official"] = any(host == d or host.endswith("." + d) for d in official_domains)
+            return results
+        except SearchUnavailable:
+            if strict:
+                raise
+            return []
 
 
 async def _tavily_search(
@@ -67,10 +98,9 @@ async def _tavily_search(
     country: str = "chile",
 ) -> list[dict]:
     payload: dict = {
-        "query": query,
+        "query": f"{query} {country}" if country and country not in query.lower() else query,
         "search_depth": "basic",
         "max_results": max_results,
-        "country": country,
         "include_answer": False,
     }
     if include_domains:
@@ -84,9 +114,10 @@ async def _tavily_search(
         )
         resp.raise_for_status()
         data = resp.json()
+    except httpx.HTTPStatusError as e:
+        raise SearchUnavailable(f"El buscador web rechazó la consulta (HTTP {e.response.status_code}). Revisa la clave y el saldo de Tavily.") from e
     except Exception as e:
-        console.print(f"[yellow][LIVE_LOOKUP] Tavily falló: {e}[/yellow]")
-        return []
+        raise SearchUnavailable("No se pudo conectar con el buscador web. Intenta nuevamente.") from e
 
     return [
         {
@@ -102,8 +133,9 @@ def format_for_context(results: list[dict]) -> str:
     """Formatea resultados de búsqueda en vivo para inyectar como contexto adicional al LLM."""
     if not results:
         return ""
-    lines = ["FUENTES WEB EN VIVO (citar con la URL entre paréntesis, verificar vigencia):"]
+    lines = ["FUENTES WEB EN VIVO (citar URL; las fuentes secundarias son orientación, no acreditan vigencia):"]
     for r in results:
         snippet = r["content"][:500]
-        lines.append(f"- {r['title']} ({r['url']}): {snippet}")
+        kind = "oficial" if r.get("official") else "secundaria"
+        lines.append(f"- [{kind}] {r['title']} ({r['url']}): {snippet}")
     return "\n".join(lines)
